@@ -1,13 +1,13 @@
 # pgoutput-cmdline
 
-A Rust command-line tool that consumes PostgreSQL logical replication streams using the pgoutput plugin and outputs the changes to stdout.
+A high-performance Rust command-line tool that streams PostgreSQL logical replication changes to multiple destinations including stdout, NATS JetStream, and Feldera pipelines.
 
 ## Features
 
 - 🚀 Stream PostgreSQL logical replication changes in real-time
 - 📊 Multiple output formats: JSON, pretty JSON, human-readable text, Debezium CDC, and Feldera InsertDelete
-- 📡 **Multiple output targets**: stdout, NATS JetStream, and Feldera HTTP ingress (can combine multiple targets)
-- 🌐 **Feldera HTTP input connector** for direct streaming to Feldera pipelines
+- 📡 Multiple output targets: stdout, NATS JetStream, and Feldera HTTP ingress (can combine multiple targets)
+- 🌐 Feldera HTTP input connector
 - 🔄 Automatic replication slot creation
 - 🎯 Support for all DML operations: INSERT, UPDATE, DELETE
 - ⚡ Built with async Rust (Tokio) for high performance
@@ -391,13 +391,14 @@ pgoutput-cmdline \
 
 ### How It Works
 
-1. The tool converts PostgreSQL replication events to Feldera InsertDelete format
-2. Events are sent via HTTP POST to: `/v0/pipelines/{pipeline}/ingress/{table}?format=json&update_format=insert_delete&array=true`
-3. INSERT operations send: `[{"insert": {...}}]`
-4. DELETE operations send: `[{"delete": {...}}]`
-5. UPDATE operations send: `[{"delete": {...}}, {"insert": {...}}]`
-6. All events are wrapped in JSON arrays due to the `array=true` parameter
-7. Transaction boundaries (BEGIN/COMMIT) and schema events (RELATION) are filtered out
+1. PostgreSQL replication events are converted to Feldera InsertDelete format with proper JSON types
+2. **Type Conversion**: Integers, floats, and booleans are sent as JSON numbers/booleans (not strings)
+3. Events are sent via HTTP POST to: `/v0/pipelines/{pipeline}/ingress/{table}?format=json&update_format=insert_delete&array=true`
+4. **INSERT** operations: `[{"insert": {...}}]`
+5. **DELETE** operations: `[{"delete": {...}}]`
+6. **UPDATE** operations: `[{"delete": {...}}, {"insert": {...}}]`
+7. All events are wrapped in JSON arrays (required by `array=true` parameter)
+8. Transaction boundaries (BEGIN/COMMIT) and schema events (RELATION) are filtered out
 
 ### Feldera Pipeline Example
 

@@ -51,8 +51,8 @@ pub struct FelderaOutput {
 
 - **Event Handling:**
   - Filters out non-data events (BEGIN, COMMIT, RELATION)
-  - Single events (INSERT/DELETE) sent as individual JSON objects
-  - UPDATE pairs (delete + insert) sent as JSON arrays
+  - All events (INSERT/UPDATE/DELETE) sent as JSON arrays due to `array=true` parameter
+  - Type-aware conversion: integers, floats, and booleans sent as proper JSON types
   - Comprehensive error handling with status code checking
 
 - **Error Messages:**
@@ -191,13 +191,13 @@ pgoutput-cmdline \
 
 **INSERT:**
 ```json
-POST /v0/pipelines/my_pipeline/ingress/users?format=json&update_format=insert_delete
-{"insert": {"id": 1, "name": "Alice", "email": "alice@example.com"}}
+POST /v0/pipelines/my_pipeline/ingress/users?format=json&update_format=insert_delete&array=true
+[{"insert": {"id": 1, "name": "Alice", "email": "alice@example.com"}}]
 ```
 
-**UPDATE (two events as array):**
+**UPDATE (delete + insert pair):**
 ```json
-POST /v0/pipelines/my_pipeline/ingress/users?format=json&update_format=insert_delete
+POST /v0/pipelines/my_pipeline/ingress/users?format=json&update_format=insert_delete&array=true
 [
   {"delete": {"id": 1, "name": "Alice", "email": "alice@example.com"}},
   {"insert": {"id": 1, "name": "Alice", "email": "alice.updated@example.com"}}
@@ -206,9 +206,11 @@ POST /v0/pipelines/my_pipeline/ingress/users?format=json&update_format=insert_de
 
 **DELETE:**
 ```json
-POST /v0/pipelines/my_pipeline/ingress/users?format=json&update_format=insert_delete
-{"delete": {"id": 1, "name": "Alice", "email": "alice@example.com"}}
+POST /v0/pipelines/my_pipeline/ingress/users?format=json&update_format=insert_delete&array=true
+[{"delete": {"id": 1, "name": "Alice", "email": "alice@example.com"}}]
 ```
+
+Note: All values use proper JSON types (numbers for integers, not strings).
 
 ## Architecture Benefits
 

@@ -17,13 +17,15 @@ This guide covers how to stream PostgreSQL logical replication changes directly 
 
 ## Overview
 
-The Feldera HTTP connector enables direct streaming from PostgreSQL to Feldera pipelines via the HTTP ingress API. This integration allows you to:
+The Feldera HTTP connector enables direct streaming from PostgreSQL to Feldera pipelines via the HTTP ingress API with automatic type conversion. This integration allows you to:
 
 - Build real-time data pipelines with streaming SQL
 - Perform incremental view maintenance on PostgreSQL data
 - Run streaming analytics and transformations
 - Synchronize data between PostgreSQL and other systems
 - Build event-driven architectures
+
+**Key Feature**: Automatically converts PostgreSQL data types to proper JSON types (integers → numbers, booleans → true/false, etc.), ensuring compatibility with Feldera's type system.
 
 ## Quick Start
 
@@ -85,18 +87,21 @@ When `--target` includes `feldera`, these arguments are required:
 
 ### Connection URL Format
 
-The connector constructs the ingress URL automatically:
+The connector automatically constructs the Feldera ingress URL:
 
 ```
 {feldera-url}/v0/pipelines/{pipeline}/ingress/{table}?format=json&update_format=insert_delete&array=true
 ```
 
-Example:
+**Example:**
 ```
 http://localhost:8080/v0/pipelines/postgres_cdc/ingress/users?format=json&update_format=insert_delete&array=true
 ```
 
-The `array=true` parameter allows UPDATE operations to be sent as a JSON array containing both delete and insert events in a single HTTP request.
+**URL Parameters:**
+- `format=json` - Expects JSON-formatted data
+- `update_format=insert_delete` - Uses InsertDelete format (not raw updates)
+- `array=true` - All events must be JSON arrays (required for batch operations)
 
 ## How It Works
 
@@ -124,6 +129,22 @@ PostgreSQL replication events are converted to Feldera InsertDelete format:
 
 All events are sent as JSON arrays because the `array=true` parameter is used.
 
+### Type Conversion
+
+The connector automatically converts PostgreSQL values to appropriate JSON types:
+
+| PostgreSQL Type | JSON Type | Example |
+|----------------|-----------|----------|
+| int2, int4, int8 (integers) | Number | `"id": 42` |
+| float4, float8 (floats) | Number | `"price": 19.99` |
+| numeric, decimal | Number | `"amount": 1000.50` |
+| boolean | Boolean | `"active": true` |
+| text, varchar, char | String | `"name": "Alice"` |
+| timestamp, date, time | String | `"created_at": "2026-01-30 12:00:00"` |
+| uuid, json, jsonb | String | Preserved as-is |
+
+This ensures that Feldera can properly parse and type-check incoming data according to your pipeline's schema.
+
 ### Filtered Events
 
 These PostgreSQL events are NOT sent to Feldera:
@@ -137,9 +158,10 @@ Only data changes (INSERT, UPDATE, DELETE) are streamed.
 
 - **Method**: POST
 - **Content-Type**: application/json
-- **Body**: Single JSON event or array of events (for UPDATEs) in InsertDelete format
+- **Body**: JSON array of InsertDelete events (all operations wrapped in arrays)
 - **Authentication**: Optional Bearer token via `--feldera-api-key`
-- **Array Support**: UPDATE operations send arrays with `array=true` parameter
+- **Data Types**: Numeric fields sent as JSON numbers, not strings
+- **Array Format**: The `array=true` parameter requires all events to be JSON arrays
 
 ## Examples
 
@@ -379,16 +401,35 @@ Error: Feldera ingress API returned error status 404: Not Found
 
 ### Format Errors
 
-HTTP 400 Bad Request:
+HTTP 400 Bad Request - Type Mismatch:
+```
+Error: Feldera ingress API returned error status 400: error parsing field 'id': invalid type: string "1", expected i32
+```
+
+**Solutions:**
+- This should not occur with the current version (automatic type conversion)
+- If it does occur, check that RELATION metadata was received before data events
+- Verify the replication stream started cleanly (use `--start-lsn` if resuming)
+
+HTTP 400 Bad Request - Array Format:
+```
+Error: invalid type: map, expected a sequence
+```
+
+**Solutions:**
+- Ensure the tool uses `array=true` parameter (automatic in current version)
+- Verify Feldera API version supports array input format
+
+HTTP 400 Bad Request - Schema Mismatch:
 ```
 Error: Feldera ingress API returned error status 400: Invalid JSON format
 ```
 
 **Solutions:**
-- Ensure `--format feldera` is specified
-- Verify PostgreSQL schema matches Feldera schema
-- Check data type compatibility
-- Review Feldera logs for details
+- Verify PostgreSQL schema matches Feldera table schema
+- Check column names match exactly (case-sensitive)
+- Ensure data types are compatible
+- Review Feldera logs for specific field errors
 
 ## Troubleshooting
 
@@ -404,17 +445,32 @@ Error: Feldera ingress API returned error status 400: Invalid JSON format
 - Ensure PostgreSQL changes are being made to published tables
 - Verify pipeline is running in Feldera
 
-#### 2. Schema Mismatch
+#### 2. Type Mismatch Errors
 
-**Symptom**: 400 errors about data format
+**Symptom**: 400 errors about "invalid type: string, expected i32" or similar
+
+**Causes:**
+- RELATION metadata not received before data events
+- Replication slot resumed from middle of stream
+- Column type information missing
+
+**Solutions:**
+- Drop and recreate the replication slot with `--create-slot`
+- Ensure the tool starts from the beginning or a known good LSN
+- Verify PostgreSQL schema metadata is being replicated
+- Check that all tables have REPLICA IDENTITY configured
+
+#### 3. Schema Mismatch
+
+**Symptom**: 400 errors about missing fields or unexpected data
 
 **Solution:**
-- Ensure PostgreSQL and Feldera schemas match
-- Check column names (case-sensitive)
+- Ensure PostgreSQL and Feldera table schemas match exactly
+- Check column names (case-sensitive in Feldera)
 - Verify data types are compatible
 - Use `REPLICA IDENTITY FULL` for complete UPDATE events
 
-#### 3. High Latency
+#### 4. High Latency
 
 **Symptom**: Delays between PostgreSQL changes and Feldera updates
 
@@ -424,7 +480,7 @@ Error: Feldera ingress API returned error status 400: Invalid JSON format
 - PostgreSQL replication lag: `SELECT * FROM pg_stat_replication;`
 - Check for CPU/memory constraints
 
-#### 4. Connection Drops
+#### 5. Connection Drops
 
 **Symptom**: Tool exits with connection errors
 
