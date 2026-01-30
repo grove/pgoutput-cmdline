@@ -726,7 +726,7 @@ For detailed test coverage information, see [TEST_COVERAGE.md](TEST_COVERAGE.md)
 
 ## License
 
-MIT
+[Apache License Version 2.0](LICENSE)
 
 ## Contributing
 
