@@ -4,6 +4,8 @@ mod output;
 
 use clap::Parser;
 use anyhow::Result;
+use std::sync::Arc;
+use output::OutputTarget;
 
 #[derive(Parser, Debug)]
 #[command(name = "pgoutput-cmdline")]
@@ -32,6 +34,18 @@ struct Args {
     /// Starting LSN (Log Sequence Number) to stream from
     #[arg(long)]
     start_lsn: Option<String>,
+
+    /// NATS server URL (e.g., "nats://localhost:4222")
+    #[arg(long)]
+    nats_server: Option<String>,
+
+    /// NATS JetStream stream name
+    #[arg(long, default_value = "postgres_replication")]
+    nats_stream: String,
+
+    /// NATS subject prefix (e.g., "postgres" will create subjects like "postgres.public.users.insert")
+    #[arg(long, default_value = "postgres")]
+    nats_subject_prefix: String,
 }
 
 #[tokio::main]
@@ -55,6 +69,30 @@ async fn main() -> Result<()> {
 
     eprintln!("Starting replication stream...\n");
 
+    // Build output targets
+    let mut targets: Vec<Arc<dyn OutputTarget>> = Vec::new();
+    
+    // Always add stdout output
+    let stdout_output = output::StdoutOutput::new(output::OutputFormat::from_str(&args.format)?);
+    targets.push(Arc::new(stdout_output));
+    
+    // Add NATS output if configured
+    if let Some(nats_server) = &args.nats_server {
+        eprintln!("Connecting to NATS server: {}", nats_server);
+        eprintln!("Stream: {}", args.nats_stream);
+        eprintln!("Subject prefix: {}\n", args.nats_subject_prefix);
+        
+        let nats_output = output::NatsOutput::new(
+            nats_server,
+            &args.nats_stream,
+            args.nats_subject_prefix.clone(),
+        ).await?;
+        targets.push(Arc::new(nats_output));
+    }
+    
+    // Create composite output
+    let output_handler = output::CompositeOutput::new(targets);
+
     // Set up graceful shutdown
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<()>(1);
     
@@ -65,14 +103,12 @@ async fn main() -> Result<()> {
     });
 
     // Process replication stream
-    let output_format = output::OutputFormat::from_str(&args.format)?;
-    
     loop {
         tokio::select! {
             result = stream.next_message() => {
                 match result {
                     Ok(Some(change)) => {
-                        output::print_change(&change, &output_format)?;
+                        output_handler.write_change(&change).await?;
                     }
                     Ok(None) => {
                         // Keep-alive or no data

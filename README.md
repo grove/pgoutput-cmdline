@@ -6,7 +6,8 @@ A Rust command-line tool that consumes PostgreSQL logical replication streams us
 
 - 🚀 Stream PostgreSQL logical replication changes in real-time
 - 📊 Multiple output formats: JSON, pretty JSON, and human-readable text
-- 🔄 Automatic replication slot creation
+- � **Publish to NATS JetStream** for distributed event streaming
+- �🔄 Automatic replication slot creation
 - 🎯 Support for all DML operations: INSERT, UPDATE, DELETE
 - ⚡ Built with async Rust (Tokio) for high performance
 - 🛑 Graceful shutdown on SIGINT/SIGTERM
@@ -152,8 +153,90 @@ Options:
   -f, --format <FORMAT>         Output format: json, json-pretty, or text [default: json]
       --create-slot             Create replication slot if it doesn't exist
       --start-lsn <START_LSN>   Starting LSN (Log Sequence Number) to stream from
+      --nats-server <URL>       NATS server URL (e.g., "nats://localhost:4222")
+      --nats-stream <STREAM>    NATS JetStream stream name [default: postgres_replication]
+      --nats-subject-prefix <PREFIX> NATS subject prefix [default: postgres]
   -h, --help                    Print help
 ```
+
+## NATS JetStream Integration
+
+Stream PostgreSQL replication events to NATS JetStream for distributed processing, event-driven architectures, and microservices.
+
+### Setup NATS Server
+
+```bash
+# Run NATS with JetStream enabled (Docker)
+docker run -p 4222:4222 -p 8222:8222 nats:latest -js
+
+# Or install NATS locally
+# https://docs.nats.io/running-a-nats-service/introduction/installation
+```
+
+### Stream to NATS
+
+```bash
+# Stream to both stdout and NATS
+pgoutput-cmdline \
+  --connection "host=localhost user=postgres dbname=mydb" \
+  --slot my_slot \
+  --publication my_pub \
+  --nats-server "nats://localhost:4222" \
+  --nats-stream "postgres_replication" \
+  --nats-subject-prefix "postgres"
+```
+
+### NATS Subject Naming
+
+Events are published to subjects following this pattern:
+
+- **Table operations**: `{prefix}.{schema}.{table}.{operation}`
+  - Example: `postgres.public.users.insert`
+  - Example: `postgres.public.orders.update`
+  - Example: `postgres.public.products.delete`
+  
+- **Transaction boundaries**: `{prefix}.transactions.{event}.event`
+  - Example: `postgres.transactions.begin.event`
+  - Example: `postgres.transactions.commit.event`
+
+- **Schema metadata**: `{prefix}.{schema}.{table}.relation`
+  - Example: `postgres.public.users.relation`
+
+### NATS Consumer Example
+
+Subscribe to specific table changes:
+
+```bash
+# Using NATS CLI - Subscribe to all user INSERT operations
+nats sub "postgres.public.users.insert"
+
+# Subscribe to all operations on users table
+nats sub "postgres.public.users.*"
+
+# Subscribe to all INSERT operations across all tables
+nats sub "postgres.*.*.insert"
+
+# Subscribe to everything
+nats sub "postgres.>"
+```
+
+### JetStream Stream Configuration
+
+The tool automatically creates a JetStream stream with these defaults:
+- **Name**: Configurable via `--nats-stream`
+- **Subjects**: `{prefix}.*.*.*` (captures all events)
+- **Storage**: Memory (default, can be modified)
+- **Max Messages**: 1,000,000
+- **Max Bytes**: 1GB
+- **Retention**: Limits-based (can be modified for work-queue patterns)
+
+### Use Cases
+
+1. **Event-Driven Microservices**: Multiple services subscribe to relevant table changes
+2. **Real-Time Analytics**: Stream database changes to analytics engines
+3. **Data Synchronization**: Keep multiple systems in sync with PostgreSQL
+4. **Audit Logging**: Durable event log with replay capability
+5. **Change Data Capture (CDC)**: Feed data warehouses and data lakes
 
 ## Example Workflow
 
