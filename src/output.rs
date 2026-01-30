@@ -16,6 +16,7 @@ pub enum OutputFormat {
     JsonPretty,
     Text,
     Debezium,
+    Feldera,
 }
 
 impl OutputFormat {
@@ -25,7 +26,8 @@ impl OutputFormat {
             "json-pretty" => Ok(OutputFormat::JsonPretty),
             "text" => Ok(OutputFormat::Text),
             "debezium" => Ok(OutputFormat::Debezium),
-            _ => Err(anyhow!("Unknown output format: {}. Valid options: json, json-pretty, text, debezium", s)),
+            "feldera" | "insert-delete" | "insert_delete" => Ok(OutputFormat::Feldera),
+            _ => Err(anyhow!("Unknown output format: {}. Valid options: json, json-pretty, text, debezium, feldera", s)),
         }
     }
 }
@@ -135,6 +137,75 @@ fn convert_to_debezium(change: &Change) -> Option<DebeziumEnvelope> {
     }
 }
 
+/// Feldera InsertDelete format event
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct FelderaUpdate {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub insert: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delete: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update: Option<serde_json::Value>,
+}
+
+/// Convert a Change event to Feldera InsertDelete format
+/// Updates are represented as delete (old) + insert (new) pairs
+fn convert_to_feldera(change: &Change) -> Vec<FelderaUpdate> {
+    match change {
+        Change::Insert { new_tuple, .. } => {
+            if let Ok(insert_data) = serde_json::to_value(new_tuple) {
+                vec![FelderaUpdate {
+                    insert: Some(insert_data),
+                    delete: None,
+                    update: None,
+                }]
+            } else {
+                vec![]
+            }
+        }
+        Change::Update { old_tuple, new_tuple, .. } => {
+            // Updates are encoded as delete (old) + insert (new)
+            let mut events = Vec::new();
+            
+            // First, delete the old state
+            if let Some(old) = old_tuple {
+                if let Ok(delete_data) = serde_json::to_value(old) {
+                    events.push(FelderaUpdate {
+                        insert: None,
+                        delete: Some(delete_data),
+                        update: None,
+                    });
+                }
+            }
+            
+            // Then, insert the new state
+            if let Ok(insert_data) = serde_json::to_value(new_tuple) {
+                events.push(FelderaUpdate {
+                    insert: Some(insert_data),
+                    delete: None,
+                    update: None,
+                });
+            }
+            
+            events
+        }
+        Change::Delete { old_tuple, .. } => {
+            if let Ok(delete_data) = serde_json::to_value(old_tuple) {
+                vec![FelderaUpdate {
+                    insert: None,
+                    delete: Some(delete_data),
+                    update: None,
+                }]
+            } else {
+                vec![]
+            }
+        }
+        // Begin, Commit, and Relation events are not converted to Feldera format
+        _ => vec![],
+    }
+}
+
 /// Stdout output target
 pub struct StdoutOutput {
     format: OutputFormat,
@@ -163,6 +234,13 @@ impl OutputTarget for StdoutOutput {
                 // Convert to Debezium format and print only data events (not Begin/Commit/Relation)
                 if let Some(debezium_event) = convert_to_debezium(change) {
                     println!("{}", serde_json::to_string(&debezium_event)?);
+                }
+            }
+            OutputFormat::Feldera => {
+                // Convert to Feldera InsertDelete format
+                // Updates produce two events: delete + insert
+                for feldera_event in convert_to_feldera(change) {
+                    println!("{}", serde_json::to_string(&feldera_event)?);
                 }
             }
         }
@@ -288,6 +366,11 @@ pub fn print_change(change: &Change, format: &OutputFormat) -> Result<()> {
                 println!("{}", serde_json::to_string(&debezium_event)?);
             }
         }
+        OutputFormat::Feldera => {
+            for feldera_event in convert_to_feldera(change) {
+                println!("{}", serde_json::to_string(&feldera_event)?);
+            }
+        }
     }
     Ok(())
 }
@@ -353,4 +436,10 @@ fn print_text_format(change: &Change) {
 #[doc(hidden)]
 pub fn convert_to_debezium_test(change: &Change) -> Option<DebeziumEnvelope> {
     convert_to_debezium(change)
+}
+
+/// Public test helper to expose convert_to_feldera for testing
+#[doc(hidden)]
+pub fn convert_to_feldera_test(change: &Change) -> Vec<FelderaUpdate> {
+    convert_to_feldera(change)
 }

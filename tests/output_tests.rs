@@ -863,3 +863,255 @@ fn test_debezium_timestamp() {
     // Verify ts_ms is positive and reasonable (after 2020-01-01)
     assert!(envelope.ts_ms > 1577836800000); // 2020-01-01 in milliseconds
 }
+
+/// Tests parsing of 'feldera' output format string.
+/// Verifies that OutputFormat::from_str correctly recognizes the Feldera variant.
+#[test]
+fn test_output_format_from_str_feldera() {
+    let format = OutputFormat::from_str("feldera").unwrap();
+    assert!(matches!(format, OutputFormat::Feldera));
+}
+
+/// Tests parsing of 'insert-delete' and 'insert_delete' as aliases for Feldera format.
+/// Verifies that the format can be referenced by multiple names.
+#[test]
+fn test_output_format_from_str_insert_delete() {
+    assert!(matches!(OutputFormat::from_str("insert-delete").unwrap(), OutputFormat::Feldera));
+    assert!(matches!(OutputFormat::from_str("insert_delete").unwrap(), OutputFormat::Feldera));
+}
+
+/// Tests Feldera format INSERT event structure.
+/// Verifies that the event contains an insert key with the record data.
+#[test]
+fn test_feldera_insert() {
+    let mut tuple = HashMap::new();
+    tuple.insert("id".to_string(), Some("123".to_string()));
+    tuple.insert("name".to_string(), Some("Alice".to_string()));
+    
+    let change = Change::Insert {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        new_tuple: tuple,
+    };
+    
+    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    
+    assert_eq!(events.len(), 1);
+    let event = &events[0];
+    assert!(event.insert.is_some());
+    assert!(event.delete.is_none());
+    assert!(event.update.is_none());
+    
+    let insert_data = event.insert.as_ref().unwrap();
+    assert_eq!(insert_data["id"], "123");
+    assert_eq!(insert_data["name"], "Alice");
+}
+
+/// Tests Feldera format UPDATE event structure.
+/// Verifies that updates are encoded as delete (old) + insert (new) pairs.
+#[test]
+fn test_feldera_update() {
+    let mut old_tuple = HashMap::new();
+    old_tuple.insert("id".to_string(), Some("123".to_string()));
+    old_tuple.insert("name".to_string(), Some("Alice".to_string()));
+    
+    let mut new_tuple = HashMap::new();
+    new_tuple.insert("id".to_string(), Some("123".to_string()));
+    new_tuple.insert("name".to_string(), Some("Alice Updated".to_string()));
+    
+    let change = Change::Update {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        old_tuple: Some(old_tuple),
+        new_tuple,
+    };
+    
+    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    
+    // Update should produce two events: delete + insert
+    assert_eq!(events.len(), 2);
+    
+    // First event: delete old
+    let delete_event = &events[0];
+    assert!(delete_event.insert.is_none());
+    assert!(delete_event.delete.is_some());
+    assert!(delete_event.update.is_none());
+    let delete_data = delete_event.delete.as_ref().unwrap();
+    assert_eq!(delete_data["id"], "123");
+    assert_eq!(delete_data["name"], "Alice");
+    
+    // Second event: insert new
+    let insert_event = &events[1];
+    assert!(insert_event.insert.is_some());
+    assert!(insert_event.delete.is_none());
+    assert!(insert_event.update.is_none());
+    let insert_data = insert_event.insert.as_ref().unwrap();
+    assert_eq!(insert_data["id"], "123");
+    assert_eq!(insert_data["name"], "Alice Updated");
+}
+
+/// Tests Feldera format UPDATE without old_tuple.
+/// Verifies that when old_tuple is None, only insert event is produced.
+#[test]
+fn test_feldera_update_without_old_tuple() {
+    let mut new_tuple = HashMap::new();
+    new_tuple.insert("id".to_string(), Some("123".to_string()));
+    new_tuple.insert("name".to_string(), Some("Alice Updated".to_string()));
+    
+    let change = Change::Update {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        old_tuple: None,
+        new_tuple,
+    };
+    
+    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    
+    // Without old_tuple, only insert is produced
+    assert_eq!(events.len(), 1);
+    let event = &events[0];
+    assert!(event.insert.is_some());
+    assert!(event.delete.is_none());
+}
+
+/// Tests Feldera format DELETE event structure.
+/// Verifies that the event contains a delete key with the old record data.
+#[test]
+fn test_feldera_delete() {
+    let mut old_tuple = HashMap::new();
+    old_tuple.insert("id".to_string(), Some("123".to_string()));
+    old_tuple.insert("name".to_string(), Some("Alice".to_string()));
+    
+    let change = Change::Delete {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        old_tuple,
+    };
+    
+    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    
+    assert_eq!(events.len(), 1);
+    let event = &events[0];
+    assert!(event.insert.is_none());
+    assert!(event.delete.is_some());
+    assert!(event.update.is_none());
+    
+    let delete_data = event.delete.as_ref().unwrap();
+    assert_eq!(delete_data["id"], "123");
+    assert_eq!(delete_data["name"], "Alice");
+}
+
+/// Tests that BEGIN transaction events are not converted to Feldera format.
+/// Verifies that convert_to_feldera returns empty vector for Begin events.
+#[test]
+fn test_feldera_begin_skipped() {
+    let change = Change::Begin {
+        lsn: "0/16B9188".to_string(),
+        timestamp: 1705320000000,
+        xid: 1234,
+    };
+    
+    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    assert!(events.is_empty());
+}
+
+/// Tests that COMMIT transaction events are not converted to Feldera format.
+/// Verifies that convert_to_feldera returns empty vector for Commit events.
+#[test]
+fn test_feldera_commit_skipped() {
+    let change = Change::Commit {
+        lsn: "0/16B91B8".to_string(),
+        timestamp: 1705320001000,
+    };
+    
+    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    assert!(events.is_empty());
+}
+
+/// Tests that RELATION events are not converted to Feldera format.
+/// Verifies that convert_to_feldera returns empty vector for Relation events.
+#[test]
+fn test_feldera_relation_skipped() {
+    let change = Change::Relation {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        columns: vec![],
+    };
+    
+    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    assert!(events.is_empty());
+}
+
+/// Tests Feldera format with NULL values in tuple data.
+/// Verifies that NULL values are correctly represented.
+#[test]
+fn test_feldera_null_handling() {
+    let mut tuple = HashMap::new();
+    tuple.insert("id".to_string(), Some("123".to_string()));
+    tuple.insert("email".to_string(), None); // NULL value
+    
+    let change = Change::Insert {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        new_tuple: tuple,
+    };
+    
+    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    
+    assert_eq!(events.len(), 1);
+    let event = &events[0];
+    assert!(event.insert.is_some());
+    let insert_data = event.insert.as_ref().unwrap();
+    assert!(insert_data.get("email").is_some());
+}
+
+/// Tests Feldera format serialization roundtrip.
+/// Verifies that the format can be serialized and deserialized correctly.
+#[test]
+fn test_feldera_serialization() {
+    let mut tuple = HashMap::new();
+    tuple.insert("id".to_string(), Some("1".to_string()));
+    tuple.insert("name".to_string(), Some("Test".to_string()));
+    
+    let change = Change::Insert {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        new_tuple: tuple,
+    };
+    
+    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    assert_eq!(events.len(), 1);
+    
+    // Serialize to JSON
+    let json = serde_json::to_string(&events[0]).unwrap();
+    assert!(json.contains("\"insert\""));
+    
+    // Deserialize back
+    let deserialized: pgoutput_cmdline::output::FelderaUpdate = serde_json::from_str(&json).unwrap();
+    assert!(deserialized.insert.is_some());
+}
+
+/// Tests Feldera format with empty tuple fields.
+/// Verifies handling of records with no data fields.
+#[test]
+fn test_feldera_empty_tuple() {
+    let tuple = HashMap::new();
+    
+    let change = Change::Insert {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        new_tuple: tuple,
+    };
+    
+    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    assert_eq!(events.len(), 1);
+    assert!(events[0].insert.is_some());
+}

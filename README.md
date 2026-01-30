@@ -5,13 +5,13 @@ A Rust command-line tool that consumes PostgreSQL logical replication streams us
 ## Features
 
 - 🚀 Stream PostgreSQL logical replication changes in real-time
-- 📊 Multiple output formats: JSON, pretty JSON, human-readable text, and Debezium CDC
+- 📊 Multiple output formats: JSON, pretty JSON, human-readable text, Debezium CDC, and Feldera InsertDelete
 - 📡 **Publish to NATS JetStream** for distributed event streaming
 - 🔄 Automatic replication slot creation
 - 🎯 Support for all DML operations: INSERT, UPDATE, DELETE
 - ⚡ Built with async Rust (Tokio) for high performance
 - 🛑 Graceful shutdown on SIGINT/SIGTERM
-- 🧪 Comprehensive test coverage (68 unit tests)
+- 🧪 Comprehensive test coverage (80 unit tests)
 
 ## Quick Start
 
@@ -243,6 +243,55 @@ The Debezium format outputs Change Data Capture (CDC) events compatible with Deb
 
 **Note:** To capture full `before` values in UPDATE operations, set `REPLICA IDENTITY FULL` on your tables (see Prerequisites section).
 
+#### Feldera JSON Format
+```bash
+pgoutput-cmdline \
+  --connection "..." \
+  --slot my_slot \
+  --publication my_pub \
+  --format feldera
+```
+
+The Feldera format outputs Change Data Capture events using the InsertDelete structure, ideal for streaming pipelines and incremental view maintenance.
+
+**Key Features:**
+- Explicit operation wrapping: `{"insert": {...}}`, `{"delete": {...}}`
+- Updates encoded as delete (old) + insert (new) pairs
+- Supports all DML operations
+- Transaction markers (BEGIN/COMMIT) and RELATION events are filtered out
+- Compatible with Feldera streaming pipelines and similar systems
+
+**Output Example - INSERT:**
+```json
+{"insert": {"id": "1", "name": "Alice", "email": "alice@example.com"}}
+```
+
+**Output Example - UPDATE (produces 2 events):**
+```json
+{"delete": {"id": "1", "name": "Alice", "email": "alice@example.com"}}
+{"insert": {"id": "1", "name": "Alice", "email": "alice.updated@example.com"}}
+```
+
+**Output Example - DELETE:**
+```json
+{"delete": {"id": "1", "name": "Alice", "email": "alice@example.com"}}
+```
+
+**Why Updates = Delete + Insert:**
+
+This pattern follows incremental view maintenance principles used in streaming systems. When a row is updated, it's treated as:
+1. Remove the old state from the view (delete)
+2. Add the new state to the view (insert)
+
+This approach ensures correct computation in aggregations, joins, and other stream operations.
+
+**Use Cases:**
+- Feldera streaming SQL pipelines
+- Incremental view maintenance systems
+- Stream processing with aggregations
+- Change data capture for analytics
+- Real-time data synchronization
+
 ### Command-Line Options
 
 ```
@@ -250,7 +299,7 @@ Options:
   -c, --connection <CONNECTION>  PostgreSQL connection string
   -s, --slot <SLOT>             Replication slot name
   -p, --publication <PUBLICATION> Publication name
-  -f, --format <FORMAT>         Output format: json, json-pretty, text, or debezium [default: json]
+  -f, --format <FORMAT>         Output format: json, json-pretty, text, debezium, or feldera [default: json]
       --create-slot             Create replication slot if it doesn't exist
       --start-lsn <START_LSN>   Starting LSN (Log Sequence Number) to stream from
       --nats-server <URL>       NATS server URL (e.g., "nats://localhost:4222")
