@@ -53,6 +53,12 @@ pub struct ColumnInfo {
 static RELATION_CACHE: Lazy<Mutex<HashMap<u32, (String, String, Vec<ColumnInfo>)>>> = 
     Lazy::new(|| Mutex::new(HashMap::new()));
 
+/// Get column metadata for a relation from the cache
+pub fn get_relation_columns(relation_id: u32) -> Option<Vec<ColumnInfo>> {
+    let cache = RELATION_CACHE.lock().unwrap();
+    cache.get(&relation_id).map(|(_, _, cols)| cols.clone())
+}
+
 pub fn decode_pgoutput_message(data: &[u8]) -> Result<Option<Change>> {
     if data.is_empty() {
         return Ok(None);

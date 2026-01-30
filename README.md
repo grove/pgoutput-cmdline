@@ -392,11 +392,12 @@ pgoutput-cmdline \
 ### How It Works
 
 1. The tool converts PostgreSQL replication events to Feldera InsertDelete format
-2. Events are sent via HTTP POST to: `/v0/pipelines/{pipeline}/ingress/{table}?format=json&update_format=insert_delete`
-3. INSERT operations send: `{"insert": {...}}`
-4. DELETE operations send: `{"delete": {...}}`
-5. UPDATE operations send two events: `[{"delete": {...}}, {"insert": {...}}]`
-6. Transaction boundaries (BEGIN/COMMIT) and schema events (RELATION) are filtered out
+2. Events are sent via HTTP POST to: `/v0/pipelines/{pipeline}/ingress/{table}?format=json&update_format=insert_delete&array=true`
+3. INSERT operations send: `[{"insert": {...}}]`
+4. DELETE operations send: `[{"delete": {...}}]`
+5. UPDATE operations send: `[{"delete": {...}}, {"insert": {...}}]`
+6. All events are wrapped in JSON arrays due to the `array=true` parameter
+7. Transaction boundaries (BEGIN/COMMIT) and schema events (RELATION) are filtered out
 
 ### Feldera Pipeline Example
 

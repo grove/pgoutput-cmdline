@@ -88,13 +88,15 @@ When `--target` includes `feldera`, these arguments are required:
 The connector constructs the ingress URL automatically:
 
 ```
-{feldera-url}/v0/pipelines/{pipeline}/ingress/{table}?format=json&update_format=insert_delete
+{feldera-url}/v0/pipelines/{pipeline}/ingress/{table}?format=json&update_format=insert_delete&array=true
 ```
 
 Example:
 ```
-http://localhost:8080/v0/pipelines/postgres_cdc/ingress/users?format=json&update_format=insert_delete
+http://localhost:8080/v0/pipelines/postgres_cdc/ingress/users?format=json&update_format=insert_delete&array=true
 ```
+
+The `array=true` parameter allows UPDATE operations to be sent as a JSON array containing both delete and insert events in a single HTTP request.
 
 ## How It Works
 
@@ -102,12 +104,12 @@ http://localhost:8080/v0/pipelines/postgres_cdc/ingress/users?format=json&update
 
 PostgreSQL replication events are converted to Feldera InsertDelete format:
 
-1. **INSERT** → Single event
+1. **INSERT** → Single-element array
    ```json
-   {"insert": {"id": 1, "name": "Alice", "email": "alice@example.com"}}
+   [{"insert": {"id": 1, "name": "Alice", "email": "alice@example.com"}}]
    ```
 
-2. **UPDATE** → Two events (delete old + insert new)
+2. **UPDATE** → Two-element array (delete old + insert new)
    ```json
    [
      {"delete": {"id": 1, "name": "Alice", "email": "alice@example.com"}},
@@ -115,10 +117,12 @@ PostgreSQL replication events are converted to Feldera InsertDelete format:
    ]
    ```
 
-3. **DELETE** → Single event
+3. **DELETE** → Single-element array
    ```json
-   {"delete": {"id": 1, "name": "Alice", "email": "alice@example.com"}}
+   [{"delete": {"id": 1, "name": "Alice", "email": "alice@example.com"}}]
    ```
+
+All events are sent as JSON arrays because the `array=true` parameter is used.
 
 ### Filtered Events
 
@@ -133,8 +137,9 @@ Only data changes (INSERT, UPDATE, DELETE) are streamed.
 
 - **Method**: POST
 - **Content-Type**: application/json
-- **Body**: JSON event(s) in InsertDelete format
+- **Body**: Single JSON event or array of events (for UPDATEs) in InsertDelete format
 - **Authentication**: Optional Bearer token via `--feldera-api-key`
+- **Array Support**: UPDATE operations send arrays with `array=true` parameter
 
 ## Examples
 

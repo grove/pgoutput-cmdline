@@ -1,9 +1,76 @@
 use anyhow::{anyhow, Result};
-use crate::decoder::Change;
+use crate::decoder::{Change, ColumnInfo};
 use serde_json;
 use async_nats::jetstream;
 use std::sync::Arc;
+use std::collections::HashMap;
 use reqwest::{Client, header};
+
+/// Convert a tuple (HashMap of string values) to proper JSON types based on column metadata
+fn tuple_to_json_with_types(
+    tuple: &HashMap<String, Option<String>>,
+    columns: &[ColumnInfo],
+) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    
+    for col in columns {
+        if let Some(value_opt) = tuple.get(&col.name) {
+            let json_value = match value_opt {
+                None => serde_json::Value::Null,
+                Some(string_val) => {
+                    // Convert based on PostgreSQL type OID
+                    // Common PostgreSQL type OIDs:
+                    // 16 = bool, 20 = int8, 21 = int2, 23 = int4
+                    // 700 = float4, 701 = float8
+                    // 1700 = numeric, 25 = text, 1043 = varchar
+                    // 1082 = date, 1083 = time, 1114 = timestamp, 1184 = timestamptz
+                    match col.type_id {
+                        // Boolean types
+                        16 => {
+                            match string_val.as_str() {
+                                "t" | "true" | "1" => serde_json::Value::Bool(true),
+                                "f" | "false" | "0" => serde_json::Value::Bool(false),
+                                _ => serde_json::Value::String(string_val.clone()),
+                            }
+                        }
+                        // Integer types: int2 (smallint), int4 (integer), int8 (bigint)
+                        20 | 21 | 23 => {
+                            string_val.parse::<i64>()
+                                .map(|n| serde_json::Value::Number(n.into()))
+                                .unwrap_or_else(|_| serde_json::Value::String(string_val.clone()))
+                        }
+                        // Float types: float4, float8
+                        700 | 701 => {
+                            string_val.parse::<f64>()
+                                .ok()
+                                .and_then(|f| serde_json::Number::from_f64(f))
+                                .map(serde_json::Value::Number)
+                                .unwrap_or_else(|| serde_json::Value::String(string_val.clone()))
+                        }
+                        // Numeric/decimal type
+                        1700 => {
+                            // Try to parse as integer first, then as float
+                            if let Ok(n) = string_val.parse::<i64>() {
+                                serde_json::Value::Number(n.into())
+                            } else if let Ok(f) = string_val.parse::<f64>() {
+                                serde_json::Number::from_f64(f)
+                                    .map(serde_json::Value::Number)
+                                    .unwrap_or_else(|| serde_json::Value::String(string_val.clone()))
+                            } else {
+                                serde_json::Value::String(string_val.clone())
+                            }
+                        }
+                        // All other types (text, varchar, timestamp, etc.) remain as strings
+                        _ => serde_json::Value::String(string_val.clone()),
+                    }
+                }
+            };
+            map.insert(col.name.clone(), json_value);
+        }
+    }
+    
+    serde_json::Value::Object(map)
+}
 
 /// Trait for output targets that can write replication changes
 #[async_trait::async_trait]
@@ -154,52 +221,78 @@ pub struct FelderaUpdate {
 /// Updates are represented as delete (old) + insert (new) pairs
 fn convert_to_feldera(change: &Change) -> Vec<FelderaUpdate> {
     match change {
-        Change::Insert { new_tuple, .. } => {
-            if let Ok(insert_data) = serde_json::to_value(new_tuple) {
+        Change::Insert { relation_id, new_tuple, .. } => {
+            if let Some(columns) = crate::decoder::get_relation_columns(*relation_id) {
+                let insert_data = tuple_to_json_with_types(new_tuple, &columns);
                 vec![FelderaUpdate {
                     insert: Some(insert_data),
                     delete: None,
                     update: None,
                 }]
             } else {
-                vec![]
+                // Fallback to string conversion if columns not available
+                if let Ok(insert_data) = serde_json::to_value(new_tuple) {
+                    vec![FelderaUpdate {
+                        insert: Some(insert_data),
+                        delete: None,
+                        update: None,
+                    }]
+                } else {
+                    vec![]
+                }
             }
         }
-        Change::Update { old_tuple, new_tuple, .. } => {
-            // Updates are encoded as delete (old) + insert (new)
+        Change::Update { relation_id, old_tuple, new_tuple, .. } => {
+            let columns = crate::decoder::get_relation_columns(*relation_id);
             let mut events = Vec::new();
             
             // First, delete the old state
             if let Some(old) = old_tuple {
-                if let Ok(delete_data) = serde_json::to_value(old) {
-                    events.push(FelderaUpdate {
-                        insert: None,
-                        delete: Some(delete_data),
-                        update: None,
-                    });
-                }
-            }
-            
-            // Then, insert the new state
-            if let Ok(insert_data) = serde_json::to_value(new_tuple) {
+                let delete_data = if let Some(ref cols) = columns {
+                    tuple_to_json_with_types(old, cols)
+                } else {
+                    serde_json::to_value(old).unwrap_or(serde_json::Value::Null)
+                };
                 events.push(FelderaUpdate {
-                    insert: Some(insert_data),
-                    delete: None,
+                    insert: None,
+                    delete: Some(delete_data),
                     update: None,
                 });
             }
             
+            // Then, insert the new state
+            let insert_data = if let Some(ref cols) = columns {
+                tuple_to_json_with_types(new_tuple, cols)
+            } else {
+                serde_json::to_value(new_tuple).unwrap_or(serde_json::Value::Null)
+            };
+            events.push(FelderaUpdate {
+                insert: Some(insert_data),
+                delete: None,
+                update: None,
+            });
+            
             events
         }
-        Change::Delete { old_tuple, .. } => {
-            if let Ok(delete_data) = serde_json::to_value(old_tuple) {
+        Change::Delete { relation_id, old_tuple, .. } => {
+            if let Some(columns) = crate::decoder::get_relation_columns(*relation_id) {
+                let delete_data = tuple_to_json_with_types(old_tuple, &columns);
                 vec![FelderaUpdate {
                     insert: None,
                     delete: Some(delete_data),
                     update: None,
                 }]
             } else {
-                vec![]
+                // Fallback to string conversion if columns not available
+                if let Ok(delete_data) = serde_json::to_value(old_tuple) {
+                    vec![FelderaUpdate {
+                        insert: None,
+                        delete: Some(delete_data),
+                        update: None,
+                    }]
+                } else {
+                    vec![]
+                }
             }
         }
         // Begin, Commit, and Relation events are not converted to Feldera format
@@ -361,7 +454,7 @@ impl FelderaOutput {
         let encoded_pipeline = urlencoding::encode(pipeline);
         let encoded_table = urlencoding::encode(table);
         let ingress_url = format!(
-            "{}/v0/pipelines/{}/ingress/{}?format=json&update_format=insert_delete",
+            "{}/v0/pipelines/{}/ingress/{}?format=json&update_format=insert_delete&array=true",
             base, encoded_pipeline, encoded_table
         );
         
@@ -383,13 +476,9 @@ impl OutputTarget for FelderaOutput {
             return Ok(());
         }
         
-        // For single events (insert or delete), send directly
-        // For updates (delete + insert pair), send as JSON array
-        let payload = if feldera_events.len() == 1 {
-            serde_json::to_string(&feldera_events[0])?
-        } else {
-            serde_json::to_string(&feldera_events)?
-        };
+        // When using array=true, Feldera expects ALL events as JSON arrays
+        // even single INSERT/DELETE operations
+        let payload = serde_json::to_string(&feldera_events)?;
         
         // Send HTTP POST request to Feldera ingress API
         let response = self.client
