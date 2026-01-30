@@ -23,7 +23,7 @@ struct Args {
     #[arg(short, long)]
     publication: String,
 
-    /// Output format: json, json-pretty, or text
+    /// Output format: json, json-pretty, text, or debezium
     #[arg(short, long, default_value = "json")]
     format: String,
 

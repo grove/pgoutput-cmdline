@@ -5,13 +5,13 @@ A Rust command-line tool that consumes PostgreSQL logical replication streams us
 ## Features
 
 - 🚀 Stream PostgreSQL logical replication changes in real-time
-- 📊 Multiple output formats: JSON, pretty JSON, and human-readable text
-- � **Publish to NATS JetStream** for distributed event streaming
-- �🔄 Automatic replication slot creation
+- 📊 Multiple output formats: JSON, pretty JSON, human-readable text, and Debezium CDC
+- 📡 **Publish to NATS JetStream** for distributed event streaming
+- 🔄 Automatic replication slot creation
 - 🎯 Support for all DML operations: INSERT, UPDATE, DELETE
 - ⚡ Built with async Rust (Tokio) for high performance
 - 🛑 Graceful shutdown on SIGINT/SIGTERM
-- 🧪 Comprehensive test coverage (29 unit tests)
+- 🧪 Comprehensive test coverage (68 unit tests)
 
 ## Quick Start
 
@@ -143,6 +143,106 @@ INSERT into public.users (ID: 16384)
 COMMIT [LSN: 0/123457, Time: 123456790]
 ```
 
+#### Debezium CDC Format
+```bash
+pgoutput-cmdline \
+  --connection "..." \
+  --slot my_slot \
+  --publication my_pub \
+  --format debezium
+```
+
+The Debezium format outputs Change Data Capture (CDC) events compatible with Debezium-based ecosystems. This format is ideal for integration with Kafka Connect, data pipelines, and standard CDC tooling.
+
+**Key Features:**
+- Standard Debezium envelope structure with `before`, `after`, `source`, and `op` fields
+- Only outputs data change events (INSERT, UPDATE, DELETE)
+- Transaction markers (BEGIN/COMMIT) and RELATION events are filtered out
+- Compatible with Debezium consumers and downstream processors
+
+**Output Example - INSERT:**
+```json
+{
+  "before": null,
+  "after": {
+    "id": "1",
+    "name": "Alice",
+    "email": "alice@example.com"
+  },
+  "source": {
+    "version": "pgoutput-cmdline-0.1.0",
+    "connector": "postgresql",
+    "name": "pgoutput-cmdline",
+    "ts_ms": 1706107200000,
+    "db": "postgres",
+    "schema": "public",
+    "table": "users",
+    "lsn": "16384"
+  },
+  "op": "c",
+  "ts_ms": 1706107200000
+}
+```
+
+**Output Example - UPDATE:**
+```json
+{
+  "before": {
+    "id": "1",
+    "name": "Alice",
+    "email": "alice@example.com"
+  },
+  "after": {
+    "id": "1",
+    "name": "Alice",
+    "email": "alice.updated@example.com"
+  },
+  "source": {
+    "version": "pgoutput-cmdline-0.1.0",
+    "connector": "postgresql",
+    "name": "pgoutput-cmdline",
+    "ts_ms": 1706107210000,
+    "db": "postgres",
+    "schema": "public",
+    "table": "users",
+    "lsn": "16384"
+  },
+  "op": "u",
+  "ts_ms": 1706107210000
+}
+```
+
+**Output Example - DELETE:**
+```json
+{
+  "before": {
+    "id": "1",
+    "name": "Alice",
+    "email": "alice@example.com"
+  },
+  "after": null,
+  "source": {
+    "version": "pgoutput-cmdline-0.1.0",
+    "connector": "postgresql",
+    "name": "pgoutput-cmdline",
+    "ts_ms": 1706107220000,
+    "db": "postgres",
+    "schema": "public",
+    "table": "users",
+    "lsn": "16384"
+  },
+  "op": "d",
+  "ts_ms": 1706107220000
+}
+```
+
+**Operation Codes:**
+- `c` = CREATE (INSERT)
+- `u` = UPDATE
+- `d` = DELETE
+
+**Note:** To capture full `before` values in UPDATE operations, set `REPLICA IDENTITY FULL` on your tables (see Prerequisites section).
+
 ### Command-Line Options
 
 ```
@@ -150,7 +250,7 @@ Options:
   -c, --connection <CONNECTION>  PostgreSQL connection string
   -s, --slot <SLOT>             Replication slot name
   -p, --publication <PUBLICATION> Publication name
-  -f, --format <FORMAT>         Output format: json, json-pretty, or text [default: json]
+  -f, --format <FORMAT>         Output format: json, json-pretty, text, or debezium [default: json]
       --create-slot             Create replication slot if it doesn't exist
       --start-lsn <START_LSN>   Starting LSN (Log Sequence Number) to stream from
       --nats-server <URL>       NATS server URL (e.g., "nats://localhost:4222")

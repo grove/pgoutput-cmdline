@@ -668,3 +668,198 @@ async fn test_multiple_inserts_through_composite() {
     };
     composite.write_change(&change2).await.unwrap();
 }
+
+/// Tests parsing of 'debezium' output format string.
+/// Verifies that OutputFormat::from_str correctly recognizes the Debezium variant.
+#[test]
+fn test_output_format_from_str_debezium() {
+    let format = OutputFormat::from_str("debezium").unwrap();
+    assert!(matches!(format, OutputFormat::Debezium));
+}
+
+/// Tests Debezium format INSERT event structure.
+/// Verifies that the envelope contains correct op='c', after data, and source metadata.
+#[test]
+fn test_debezium_insert() {
+    let mut tuple = HashMap::new();
+    tuple.insert("id".to_string(), Some("123".to_string()));
+    tuple.insert("name".to_string(), Some("Alice".to_string()));
+    
+    let change = Change::Insert {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        new_tuple: tuple,
+    };
+    
+    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change).unwrap();
+    
+    assert_eq!(envelope.op, "c");
+    assert!(envelope.before.is_none());
+    assert!(envelope.after.is_some());
+    assert_eq!(envelope.source.schema, "public");
+    assert_eq!(envelope.source.table, "users");
+    assert_eq!(envelope.source.connector, "postgresql");
+}
+
+/// Tests Debezium format UPDATE event structure.
+/// Verifies that the envelope contains op='u', both before and after data, and source metadata.
+#[test]
+fn test_debezium_update() {
+    let mut old_tuple = HashMap::new();
+    old_tuple.insert("id".to_string(), Some("123".to_string()));
+    old_tuple.insert("name".to_string(), Some("Alice".to_string()));
+    
+    let mut new_tuple = HashMap::new();
+    new_tuple.insert("id".to_string(), Some("123".to_string()));
+    new_tuple.insert("name".to_string(), Some("Alice Updated".to_string()));
+    
+    let change = Change::Update {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        old_tuple: Some(old_tuple),
+        new_tuple,
+    };
+    
+    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change).unwrap();
+    
+    assert_eq!(envelope.op, "u");
+    assert!(envelope.before.is_some());
+    assert!(envelope.after.is_some());
+    assert_eq!(envelope.source.schema, "public");
+    assert_eq!(envelope.source.table, "users");
+}
+
+/// Tests Debezium format DELETE event structure.
+/// Verifies that the envelope contains op='d', before data only, and no after data.
+#[test]
+fn test_debezium_delete() {
+    let mut old_tuple = HashMap::new();
+    old_tuple.insert("id".to_string(), Some("123".to_string()));
+    old_tuple.insert("name".to_string(), Some("Alice".to_string()));
+    
+    let change = Change::Delete {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        old_tuple,
+    };
+    
+    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change).unwrap();
+    
+    assert_eq!(envelope.op, "d");
+    assert!(envelope.before.is_some());
+    assert!(envelope.after.is_none());
+    assert_eq!(envelope.source.schema, "public");
+    assert_eq!(envelope.source.table, "users");
+}
+
+/// Tests that BEGIN transaction events are not converted to Debezium format.
+/// Verifies that convert_to_debezium returns None for Begin events.
+#[test]
+fn test_debezium_begin_skipped() {
+    let change = Change::Begin {
+        lsn: "0/16B9188".to_string(),
+        timestamp: 1705320000000,
+        xid: 1234,
+    };
+    
+    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change);
+    assert!(envelope.is_none());
+}
+
+/// Tests that COMMIT transaction events are not converted to Debezium format.
+/// Verifies that convert_to_debezium returns None for Commit events.
+#[test]
+fn test_debezium_commit_skipped() {
+    let change = Change::Commit {
+        lsn: "0/16B91B8".to_string(),
+        timestamp: 1705320001000,
+    };
+    
+    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change);
+    assert!(envelope.is_none());
+}
+
+/// Tests that RELATION events are not converted to Debezium format.
+/// Verifies that convert_to_debezium returns None for Relation events.
+#[test]
+fn test_debezium_relation_skipped() {
+    let change = Change::Relation {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        columns: vec![],
+    };
+    
+    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change);
+    assert!(envelope.is_none());
+}
+
+/// Tests Debezium format with NULL values in tuple data.
+/// Verifies that NULL values are correctly represented in the envelope.
+#[test]
+fn test_debezium_null_handling() {
+    let mut tuple = HashMap::new();
+    tuple.insert("id".to_string(), Some("123".to_string()));
+    tuple.insert("email".to_string(), None); // NULL value
+    
+    let change = Change::Insert {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        new_tuple: tuple,
+    };
+    
+    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change).unwrap();
+    
+    assert!(envelope.after.is_some());
+    let after = envelope.after.as_ref().unwrap();
+    assert!(after.get("email").is_some());
+}
+
+/// Tests Debezium source metadata fields.
+/// Verifies that source contains all required Debezium fields with correct values.
+#[test]
+fn test_debezium_source_metadata() {
+    let mut tuple = HashMap::new();
+    tuple.insert("id".to_string(), Some("1".to_string()));
+    
+    let change = Change::Insert {
+        relation_id: 16384,
+        schema: "test_schema".to_string(),
+        table: "test_table".to_string(),
+        new_tuple: tuple,
+    };
+    
+    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change).unwrap();
+    
+    assert_eq!(envelope.source.version, "pgoutput-cmdline-0.1.0");
+    assert_eq!(envelope.source.connector, "postgresql");
+    assert_eq!(envelope.source.name, "pgoutput-cmdline");
+    assert_eq!(envelope.source.db, "postgres");
+    assert_eq!(envelope.source.schema, "test_schema");
+    assert_eq!(envelope.source.table, "test_table");
+    assert!(!envelope.source.lsn.is_empty());
+}
+
+/// Tests Debezium timestamp field presence.
+/// Verifies that ts_ms is populated and is a reasonable Unix timestamp.
+#[test]
+fn test_debezium_timestamp() {
+    let mut tuple = HashMap::new();
+    tuple.insert("id".to_string(), Some("1".to_string()));
+    
+    let change = Change::Insert {
+        relation_id: 16384,
+        schema: "public".to_string(),
+        table: "users".to_string(),
+        new_tuple: tuple,
+    };
+    
+    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change).unwrap();
+    
+    // Verify ts_ms is positive and reasonable (after 2020-01-01)
+    assert!(envelope.ts_ms > 1577836800000); // 2020-01-01 in milliseconds
+}
