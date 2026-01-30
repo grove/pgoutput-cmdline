@@ -17,3 +17,5 @@ once_cell = "1.19"
 async-nats = "0.33"
 async-trait = "0.1"
 chrono = "0.4"
+reqwest = { version = "0.11", features = ["json"] }
+urlencoding = "2.1"

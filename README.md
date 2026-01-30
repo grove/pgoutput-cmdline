@@ -6,7 +6,8 @@ A Rust command-line tool that consumes PostgreSQL logical replication streams us
 
 - 🚀 Stream PostgreSQL logical replication changes in real-time
 - 📊 Multiple output formats: JSON, pretty JSON, human-readable text, Debezium CDC, and Feldera InsertDelete
-- 📡 **Publish to NATS JetStream** for distributed event streaming
+- 📡 **Multiple output targets**: stdout, NATS JetStream, and Feldera HTTP ingress (can combine multiple targets)
+- 🌐 **Feldera HTTP input connector** for direct streaming to Feldera pipelines
 - 🔄 Automatic replication slot creation
 - 🎯 Support for all DML operations: INSERT, UPDATE, DELETE
 - ⚡ Built with async Rust (Tokio) for high performance
@@ -302,10 +303,170 @@ Options:
   -f, --format <FORMAT>         Output format: json, json-pretty, text, debezium, or feldera [default: json]
       --create-slot             Create replication slot if it doesn't exist
       --start-lsn <START_LSN>   Starting LSN (Log Sequence Number) to stream from
-      --nats-server <URL>       NATS server URL (e.g., "nats://localhost:4222")
+  -t, --target <TARGET>         Output target(s): stdout, nats, feldera (comma-separated for multiple) [default: stdout]
+      --nats-server <URL>       NATS server URL (required when target includes 'nats')
       --nats-stream <STREAM>    NATS JetStream stream name [default: postgres_replication]
       --nats-subject-prefix <PREFIX> NATS subject prefix [default: postgres]
+      --feldera-url <URL>       Feldera base URL (required when target includes 'feldera')
+      --feldera-pipeline <NAME> Feldera pipeline name (required when target includes 'feldera')
+      --feldera-table <NAME>    Feldera table name (required when target includes 'feldera')
+      --feldera-api-key <KEY>   Feldera API key for authentication (optional)
   -h, --help                    Print help
+```
+
+## Output Targets
+
+Stream PostgreSQL changes to one or more destinations using the `--target` option.
+
+### Stdout (Default)
+
+Output changes to standard output:
+
+```bash
+pgoutput-cmdline \
+  --connection "..." \
+  --slot my_slot \
+  --publication my_pub \
+  --target stdout
+```
+
+### Multiple Targets
+
+Combine multiple targets with comma-separated values:
+
+```bash
+# Output to both stdout and NATS
+pgoutput-cmdline \
+  --connection "..." \
+  --slot my_slot \
+  --publication my_pub \
+  --target "stdout,nats" \
+  --nats-server "nats://localhost:4222"
+
+# Output to stdout, NATS, and Feldera simultaneously
+pgoutput-cmdline \
+  --connection "..." \
+  --slot my_slot \
+  --publication my_pub \
+  --format feldera \
+  --target "stdout,nats,feldera" \
+  --nats-server "nats://localhost:4222" \
+  --feldera-url "http://localhost:8080" \
+  --feldera-pipeline "postgres_cdc" \
+  --feldera-table "users"
+```
+
+## Feldera HTTP Connector
+
+Stream PostgreSQL changes directly to Feldera pipelines via HTTP ingress API. Perfect for real-time data pipelines, streaming SQL, and incremental view maintenance.
+
+### Basic Usage
+
+```bash
+pgoutput-cmdline \
+  --connection "host=localhost user=postgres dbname=mydb" \
+  --slot my_slot \
+  --publication my_pub \
+  --format feldera \
+  --target feldera \
+  --feldera-url "http://localhost:8080" \
+  --feldera-pipeline "postgres_cdc" \
+  --feldera-table "users"
+```
+
+### With API Authentication
+
+```bash
+pgoutput-cmdline \
+  --connection "..." \
+  --slot my_slot \
+  --publication my_pub \
+  --format feldera \
+  --target feldera \
+  --feldera-url "https://cloud.feldera.com" \
+  --feldera-pipeline "my_pipeline" \
+  --feldera-table "my_table" \
+  --feldera-api-key "your-api-key-here"
+```
+
+### How It Works
+
+1. The tool converts PostgreSQL replication events to Feldera InsertDelete format
+2. Events are sent via HTTP POST to: `/v0/pipelines/{pipeline}/ingress/{table}?format=json&update_format=insert_delete`
+3. INSERT operations send: `{"insert": {...}}`
+4. DELETE operations send: `{"delete": {...}}`
+5. UPDATE operations send two events: `[{"delete": {...}}, {"insert": {...}}]`
+6. Transaction boundaries (BEGIN/COMMIT) and schema events (RELATION) are filtered out
+
+### Feldera Pipeline Example
+
+Create a simple pipeline in Feldera:
+
+```sql
+-- Define input table matching PostgreSQL schema
+CREATE TABLE users (
+    id INT,
+    name VARCHAR,
+    email VARCHAR
+) WITH (
+    'connectors' = '[{
+        "name": "postgres_input",
+        "transport": {
+            "name": "http_input",
+            "config": {}
+        }
+    }]'
+);
+
+-- Define a view
+CREATE VIEW active_users AS
+SELECT id, name, email
+FROM users
+WHERE email IS NOT NULL;
+```
+
+Then stream from PostgreSQL:
+
+```bash
+pgoutput-cmdline \
+  --connection "..." \
+  --slot my_slot \
+  --publication my_pub \
+  --format feldera \
+  --target feldera \
+  --feldera-url "http://localhost:8080" \
+  --feldera-pipeline "my_pipeline" \
+  --feldera-table "users"
+```
+
+### Use Cases
+
+1. **Real-Time Analytics**: Feed PostgreSQL changes directly into streaming SQL pipelines
+2. **Incremental View Maintenance**: Keep materialized views in sync with source data
+3. **Data Pipelines**: Build ETL pipelines with streaming transformations
+4. **Change Data Capture**: Stream database changes to data warehouses
+5. **Event Processing**: React to database changes in real-time
+
+### Troubleshooting
+
+**Connection Errors:**
+- Verify Feldera server is running and accessible
+- Check firewall rules and network connectivity
+- Ensure correct base URL (with http:// or https://)
+
+**Authentication Errors (401/403):**
+- Verify API key is correct if using authentication
+- Check that the API key has necessary permissions
+
+**Pipeline/Table Not Found (404):**
+- Ensure pipeline exists and is running in Feldera
+- Verify table name matches the table defined in Feldera SQL
+- Check for typos in pipeline or table names
+
+**Format Errors (400):**
+- Ensure `--format feldera` is specified
+- Verify PostgreSQL table schema matches Feldera table schema
+- Check that data types are compatible
 ```
 
 ## NATS JetStream Integration
@@ -325,14 +486,23 @@ docker run -p 4222:4222 -p 8222:8222 nats:latest -js
 ### Stream to NATS
 
 ```bash
-# Stream to both stdout and NATS
+# Stream to NATS only
 pgoutput-cmdline \
   --connection "host=localhost user=postgres dbname=mydb" \
   --slot my_slot \
   --publication my_pub \
+  --target nats \
   --nats-server "nats://localhost:4222" \
   --nats-stream "postgres_replication" \
   --nats-subject-prefix "postgres"
+
+# Or combine with stdout
+pgoutput-cmdline \
+  --connection "host=localhost user=postgres dbname=mydb" \
+  --slot my_slot \
+  --publication my_pub \
+  --target "stdout,nats" \
+  --nats-server "nats://localhost:4222"
 ```
 
 ### NATS Subject Naming
@@ -486,6 +656,16 @@ pgoutput-cmdline ... --format json | jq 'select(.Insert != null)'
 # Process with custom scripts
 pgoutput-cmdline ... --format json | python process_changes.py
 ```
+
+## Documentation
+
+For detailed guides on specific features:
+
+- **[GETTING_STARTED.md](GETTING_STARTED.md)** - Quick start guide for new users
+- **[FELDERA_HTTP_CONNECTOR.md](FELDERA_HTTP_CONNECTOR.md)** - Complete guide to Feldera HTTP streaming
+- **[FELDERA_FORMAT.md](FELDERA_FORMAT.md)** - Feldera InsertDelete format specification
+- **[DEBEZIUM_FORMAT.md](DEBEZIUM_FORMAT.md)** - Debezium CDC format specification  
+- **[TEST_COVERAGE.md](TEST_COVERAGE.md)** - Test coverage details
 
 ## Troubleshooting
 

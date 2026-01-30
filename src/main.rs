@@ -35,7 +35,11 @@ struct Args {
     #[arg(long)]
     start_lsn: Option<String>,
 
-    /// NATS server URL (e.g., "nats://localhost:4222")
+    /// Output target(s): stdout, nats, feldera (comma-separated for multiple)
+    #[arg(short, long, default_value = "stdout")]
+    target: String,
+
+    /// NATS server URL (required when target includes 'nats')
     #[arg(long)]
     nats_server: Option<String>,
 
@@ -46,6 +50,22 @@ struct Args {
     /// NATS subject prefix (e.g., "postgres" will create subjects like "postgres.public.users.insert")
     #[arg(long, default_value = "postgres")]
     nats_subject_prefix: String,
+
+    /// Feldera base URL (required when target includes 'feldera')
+    #[arg(long)]
+    feldera_url: Option<String>,
+
+    /// Feldera pipeline name (required when target includes 'feldera')
+    #[arg(long)]
+    feldera_pipeline: Option<String>,
+
+    /// Feldera table name (required when target includes 'feldera')
+    #[arg(long)]
+    feldera_table: Option<String>,
+
+    /// Feldera API key for authentication (optional)
+    #[arg(long)]
+    feldera_api_key: Option<String>,
 }
 
 #[tokio::main]
@@ -69,25 +89,69 @@ async fn main() -> Result<()> {
 
     eprintln!("Starting replication stream...\n");
 
-    // Build output targets
+    // Build output targets based on --target option
     let mut targets: Vec<Arc<dyn OutputTarget>> = Vec::new();
+    let target_list: Vec<&str> = args.target.split(',').map(|s| s.trim()).collect();
     
-    // Always add stdout output
-    let stdout_output = output::StdoutOutput::new(output::OutputFormat::from_str(&args.format)?);
-    targets.push(Arc::new(stdout_output));
+    eprintln!("Output targets: {}", args.target);
     
-    // Add NATS output if configured
-    if let Some(nats_server) = &args.nats_server {
-        eprintln!("Connecting to NATS server: {}", nats_server);
-        eprintln!("Stream: {}", args.nats_stream);
-        eprintln!("Subject prefix: {}\n", args.nats_subject_prefix);
-        
-        let nats_output = output::NatsOutput::new(
-            nats_server,
-            &args.nats_stream,
-            args.nats_subject_prefix.clone(),
-        ).await?;
-        targets.push(Arc::new(nats_output));
+    for target in target_list {
+        match target {
+            "stdout" => {
+                let stdout_output = output::StdoutOutput::new(output::OutputFormat::from_str(&args.format)?);
+                targets.push(Arc::new(stdout_output));
+                eprintln!("  - stdout (format: {})", args.format);
+            }
+            "nats" => {
+                let nats_server = args.nats_server.as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("--nats-server is required when target includes 'nats'"))?;
+                
+                eprintln!("  - NATS JetStream:");
+                eprintln!("      Server: {}", nats_server);
+                eprintln!("      Stream: {}", args.nats_stream);
+                eprintln!("      Subject prefix: {}", args.nats_subject_prefix);
+                
+                let nats_output = output::NatsOutput::new(
+                    nats_server,
+                    &args.nats_stream,
+                    args.nats_subject_prefix.clone(),
+                ).await?;
+                targets.push(Arc::new(nats_output));
+            }
+            "feldera" => {
+                let feldera_url = args.feldera_url.as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("--feldera-url is required when target includes 'feldera'"))?;
+                let feldera_pipeline = args.feldera_pipeline.as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("--feldera-pipeline is required when target includes 'feldera'"))?;
+                let feldera_table = args.feldera_table.as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("--feldera-table is required when target includes 'feldera'"))?;
+                
+                eprintln!("  - Feldera HTTP Connector:");
+                eprintln!("      URL: {}", feldera_url);
+                eprintln!("      Pipeline: {}", feldera_pipeline);
+                eprintln!("      Table: {}", feldera_table);
+                if args.feldera_api_key.is_some() {
+                    eprintln!("      API Key: [configured]");
+                }
+                
+                let feldera_output = output::FelderaOutput::new(
+                    feldera_url,
+                    feldera_pipeline,
+                    feldera_table,
+                    args.feldera_api_key.as_deref(),
+                ).await?;
+                targets.push(Arc::new(feldera_output));
+            }
+            _ => {
+                return Err(anyhow::anyhow!("Unknown target '{}'. Valid targets: stdout, nats, feldera", target));
+            }
+        }
+    }
+    
+    eprintln!();
+    
+    if targets.is_empty() {
+        return Err(anyhow::anyhow!("At least one output target must be specified"));
     }
     
     // Create composite output

@@ -3,6 +3,7 @@ use crate::decoder::Change;
 use serde_json;
 use async_nats::jetstream;
 use std::sync::Arc;
+use reqwest::{Client, header};
 
 /// Trait for output targets that can write replication changes
 #[async_trait::async_trait]
@@ -322,6 +323,92 @@ impl OutputTarget for NatsOutput {
         self.context.publish(subject.clone(), payload.into())
             .await
             .map_err(|e| anyhow!("Failed to publish to NATS subject {}: {}", subject, e))?;
+        
+        Ok(())
+    }
+}
+
+/// Feldera HTTP output target
+pub struct FelderaOutput {
+    client: Client,
+    ingress_url: String,
+}
+
+impl FelderaOutput {
+    pub async fn new(
+        base_url: &str,
+        pipeline: &str,
+        table: &str,
+        api_key: Option<&str>,
+    ) -> Result<Self> {
+        // Build HTTP client with optional authentication
+        let mut headers = header::HeaderMap::new();
+        headers.insert(header::CONTENT_TYPE, header::HeaderValue::from_static("application/json"));
+        
+        if let Some(key) = api_key {
+            let auth_value = header::HeaderValue::from_str(&format!("Bearer {}", key))
+                .map_err(|e| anyhow!("Invalid API key: {}", e))?;
+            headers.insert(header::AUTHORIZATION, auth_value);
+        }
+        
+        let client = Client::builder()
+            .default_headers(headers)
+            .build()
+            .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
+        
+        // Build ingress URL with format and update_format parameters
+        let base = base_url.trim_end_matches('/');
+        let encoded_pipeline = urlencoding::encode(pipeline);
+        let encoded_table = urlencoding::encode(table);
+        let ingress_url = format!(
+            "{}/v0/pipelines/{}/ingress/{}?format=json&update_format=insert_delete",
+            base, encoded_pipeline, encoded_table
+        );
+        
+        Ok(Self {
+            client,
+            ingress_url,
+        })
+    }
+}
+
+#[async_trait::async_trait]
+impl OutputTarget for FelderaOutput {
+    async fn write_change(&self, change: &Change) -> Result<()> {
+        // Convert to Feldera InsertDelete format
+        let feldera_events = convert_to_feldera(change);
+        
+        // Skip non-data events (Begin, Commit, Relation)
+        if feldera_events.is_empty() {
+            return Ok(());
+        }
+        
+        // For single events (insert or delete), send directly
+        // For updates (delete + insert pair), send as JSON array
+        let payload = if feldera_events.len() == 1 {
+            serde_json::to_string(&feldera_events[0])?
+        } else {
+            serde_json::to_string(&feldera_events)?
+        };
+        
+        // Send HTTP POST request to Feldera ingress API
+        let response = self.client
+            .post(&self.ingress_url)
+            .body(payload)
+            .send()
+            .await
+            .map_err(|e| anyhow!("Failed to send data to Feldera: {}", e))?;
+        
+        // Check for successful response
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "<no body>".to_string());
+            return Err(anyhow!(
+                "Feldera ingress API returned error status {}: {}",
+                status,
+                error_body
+            ));
+        }
         
         Ok(())
     }
