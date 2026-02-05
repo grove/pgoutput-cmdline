@@ -17,6 +17,8 @@ sudo systemctl restart postgresql  # Linux
 brew services restart postgresql   # macOS
 ```
 
+**Note:** For complete setup instructions including authentication, permissions, and troubleshooting, see [PREREQUISITES.md](PREREQUISITES.md).
+
 ### 2. Set Up Test Database
 
 ```bash
@@ -137,3 +139,13 @@ The tool:
 3. Subscribes to changes via the publication
 4. Decodes pgoutput protocol messages
 5. Formats and outputs changes to stdout
+
+## See Also
+
+- **[PREREQUISITES.md](PREREQUISITES.md)** - Complete PostgreSQL setup guide
+- **[USAGE.md](USAGE.md)** - Detailed CLI reference and usage examples
+- **[README.md](README.md)** - Project overview
+- **[DEBEZIUM_FORMAT.md](DEBEZIUM_FORMAT.md)** - Debezium CDC format
+- **[FELDERA_FORMAT.md](FELDERA_FORMAT.md)** - Feldera InsertDelete format
+- **[NATS_INTEGRATION.md](NATS_INTEGRATION.md)** - NATS JetStream integration
+- **[FELDERA_HTTP_CONNECTOR.md](FELDERA_HTTP_CONNECTOR.md)** - Feldera HTTP connector
