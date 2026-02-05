@@ -309,7 +309,7 @@ Options:
       --nats-subject-prefix <PREFIX> NATS subject prefix [default: postgres]
       --feldera-url <URL>       Feldera base URL (required when target includes 'feldera')
       --feldera-pipeline <NAME> Feldera pipeline name (required when target includes 'feldera')
-      --feldera-table <NAME>    Feldera table name (required when target includes 'feldera')
+      --feldera-tables <NAMES>  Comma-separated schema-qualified tables (e.g., 'public_users,public_orders'). Optional; if omitted, routes all tables
       --feldera-api-key <KEY>   Feldera API key for authentication (optional)
   -h, --help                    Print help
 ```
@@ -352,15 +352,31 @@ pgoutput-stream \
   --target "stdout,nats,feldera" \
   --nats-server "nats://localhost:4222" \
   --feldera-url "http://localhost:8080" \
-  --feldera-pipeline "postgres_cdc" \
-  --feldera-table "users"
+  --feldera-pipeline "postgres_cdc"
 ```
 
 ## Feldera HTTP Connector
 
 Stream PostgreSQL changes directly to Feldera pipelines via HTTP ingress API. Perfect for real-time data pipelines, streaming SQL, and incremental view maintenance.
 
-### Basic Usage
+**Multi-table support**: Automatically streams all tables from your PostgreSQL publication, using schema-qualified names (`schema_table` format) to avoid conflicts.
+
+### Basic Usage (All Tables)
+
+```bash
+pgoutput-stream \
+  --connection "host=localhost user=postgres dbname=mydb" \
+  --slot my_slot \
+  --publication my_pub \
+  --format feldera \
+  --target feldera \
+  --feldera-url "http://localhost:8080" \
+  --feldera-pipeline "postgres_cdc"
+```
+
+**Note**: PostgreSQL `public.users` routes to Feldera `public_users`, `analytics.events` routes to `analytics_events`, etc.
+
+### Filtered Tables
 
 ```bash
 pgoutput-stream \
@@ -371,7 +387,7 @@ pgoutput-stream \
   --target feldera \
   --feldera-url "http://localhost:8080" \
   --feldera-pipeline "postgres_cdc" \
-  --feldera-table "users"
+  --feldera-tables "public_users,public_orders"
 ```
 
 ### With API Authentication
@@ -385,28 +401,29 @@ pgoutput-stream \
   --target feldera \
   --feldera-url "https://cloud.feldera.com" \
   --feldera-pipeline "my_pipeline" \
-  --feldera-table "my_table" \
   --feldera-api-key "your-api-key-here"
 ```
 
 ### How It Works
 
 1. PostgreSQL replication events are converted to Feldera InsertDelete format with proper JSON types
-2. **Type Conversion**: Integers, floats, and booleans are sent as JSON numbers/booleans (not strings)
-3. Events are sent via HTTP POST to: `/v0/pipelines/{pipeline}/ingress/{table}?format=json&update_format=insert_delete&array=true`
-4. **INSERT** operations: `[{"insert": {...}}]`
-5. **DELETE** operations: `[{"delete": {...}}]`
-6. **UPDATE** operations: `[{"delete": {...}}, {"insert": {...}}]`
-7. All events are wrapped in JSON arrays (required by `array=true` parameter)
-8. Transaction boundaries (BEGIN/COMMIT) and schema events (RELATION) are filtered out
+2. **Multi-table routing**: Each PostgreSQL `schema.table` is routed to Feldera `schema_table` table
+3. **Type Conversion**: Integers, floats, and booleans are sent as JSON numbers/booleans (not strings)
+4. Events are sent via HTTP POST to: `/v0/pipelines/{pipeline}/ingress/{schema_table}?format=json&update_format=insert_delete&array=true`
+5. **INSERT** operations: `[{"insert": {...}}]`
+6. **DELETE** operations: `[{"delete": {...}}]`
+7. **UPDATE** operations: `[{"delete": {...}}, {"insert": {...}}]`
+8. All events are wrapped in JSON arrays (required by `array=true` parameter)
+9. Transaction boundaries (BEGIN/COMMIT) and schema events (RELATION) are filtered out
 
 ### Feldera Pipeline Example
 
-Create a simple pipeline in Feldera:
+Create a simple pipeline in Feldera using schema-qualified table names:
 
 ```sql
 -- Define input table matching PostgreSQL schema
-CREATE TABLE users (
+-- Note: Use schema_table naming convention
+CREATE TABLE public_users (
     id INT,
     name VARCHAR,
     email VARCHAR
@@ -423,7 +440,7 @@ CREATE TABLE users (
 -- Define a view
 CREATE VIEW active_users AS
 SELECT id, name, email
-FROM users
+FROM public_users
 WHERE email IS NOT NULL;
 ```
 
@@ -437,8 +454,7 @@ pgoutput-stream \
   --format feldera \
   --target feldera \
   --feldera-url "http://localhost:8080" \
-  --feldera-pipeline "my_pipeline" \
-  --feldera-table "users"
+  --feldera-pipeline "my_pipeline"
 ```
 
 ### Use Cases

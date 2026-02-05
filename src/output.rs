@@ -3,7 +3,7 @@ use crate::decoder::{Change, ColumnInfo};
 use serde_json;
 use async_nats::jetstream;
 use std::sync::Arc;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use reqwest::{Client, header};
 
 /// Convert a tuple (HashMap of string values) to proper JSON types based on column metadata
@@ -424,14 +424,31 @@ impl OutputTarget for NatsOutput {
 /// Feldera HTTP output target
 pub struct FelderaOutput {
     client: Client,
-    ingress_url: String,
+    base_url: String,
+    pipeline: String,
+    allowed_tables: Option<HashSet<String>>,
 }
 
 impl FelderaOutput {
+    /// Qualify table name with schema (schema_table format)
+    fn qualify_table_name(schema: &str, table: &str) -> String {
+        format!("{}_{}", schema, table)
+    }
+    
+    /// Build Feldera ingress URL for a qualified table name
+    fn build_ingress_url(&self, qualified_table: &str) -> String {
+        let encoded_pipeline = urlencoding::encode(&self.pipeline);
+        let encoded_table = urlencoding::encode(qualified_table);
+        format!(
+            "{}/v0/pipelines/{}/ingress/{}?format=json&update_format=insert_delete&array=true",
+            self.base_url, encoded_pipeline, encoded_table
+        )
+    }
+    
     pub async fn new(
         base_url: &str,
         pipeline: &str,
-        table: &str,
+        allowed_tables: Option<Vec<String>>,
         api_key: Option<&str>,
     ) -> Result<Self> {
         // Build HTTP client with optional authentication
@@ -449,18 +466,16 @@ impl FelderaOutput {
             .build()
             .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
         
-        // Build ingress URL with format and update_format parameters
-        let base = base_url.trim_end_matches('/');
-        let encoded_pipeline = urlencoding::encode(pipeline);
-        let encoded_table = urlencoding::encode(table);
-        let ingress_url = format!(
-            "{}/v0/pipelines/{}/ingress/{}?format=json&update_format=insert_delete&array=true",
-            base, encoded_pipeline, encoded_table
-        );
+        // Convert allowed_tables Vec to HashSet for efficient lookup
+        let allowed_tables_set = allowed_tables.map(|tables| {
+            tables.into_iter().collect::<HashSet<String>>()
+        });
         
         Ok(Self {
             client,
-            ingress_url,
+            base_url: base_url.trim_end_matches('/').to_string(),
+            pipeline: pipeline.to_string(),
+            allowed_tables: allowed_tables_set,
         })
     }
 }
@@ -468,13 +483,36 @@ impl FelderaOutput {
 #[async_trait::async_trait]
 impl OutputTarget for FelderaOutput {
     async fn write_change(&self, change: &Change) -> Result<()> {
+        // Extract schema and table from the change event
+        let (schema, table) = match change {
+            Change::Insert { schema, table, .. } => (schema, table),
+            Change::Update { schema, table, .. } => (schema, table),
+            Change::Delete { schema, table, .. } => (schema, table),
+            // Skip non-data events (Begin, Commit, Relation)
+            _ => return Ok(()),
+        };
+        
+        // Qualify table name with schema
+        let qualified_table = Self::qualify_table_name(schema, table);
+        
+        // Check against allowed tables filter if present
+        if let Some(ref allowed) = self.allowed_tables {
+            if !allowed.contains(&qualified_table) {
+                eprintln!("Warning: Skipping table {}.{} (not in allowed list)", schema, table);
+                return Ok(());
+            }
+        }
+        
         // Convert to Feldera InsertDelete format
         let feldera_events = convert_to_feldera(change);
         
-        // Skip non-data events (Begin, Commit, Relation)
+        // Skip if conversion resulted in empty events
         if feldera_events.is_empty() {
             return Ok(());
         }
+        
+        // Build ingress URL dynamically for this table
+        let ingress_url = self.build_ingress_url(&qualified_table);
         
         // When using array=true, Feldera expects ALL events as JSON arrays
         // even single INSERT/DELETE operations
@@ -482,7 +520,7 @@ impl OutputTarget for FelderaOutput {
         
         // Send HTTP POST request to Feldera ingress API
         let response = self.client
-            .post(&self.ingress_url)
+            .post(&ingress_url)
             .body(payload)
             .send()
             .await
@@ -618,4 +656,134 @@ pub fn convert_to_debezium_test(change: &Change) -> Option<DebeziumEnvelope> {
 #[doc(hidden)]
 pub fn convert_to_feldera_test(change: &Change) -> Vec<FelderaUpdate> {
     convert_to_feldera(change)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests qualify_table_name() basic functionality
+    #[test]
+    fn test_qualify_table_name() {
+        assert_eq!(FelderaOutput::qualify_table_name("public", "users"), "public_users");
+        assert_eq!(FelderaOutput::qualify_table_name("analytics", "orders"), "analytics_orders");
+        assert_eq!(FelderaOutput::qualify_table_name("sales", "products"), "sales_products");
+    }
+
+    /// Tests qualify_table_name() with special characters
+    #[test]
+    fn test_qualify_table_name_with_special_chars() {
+        assert_eq!(FelderaOutput::qualify_table_name("public", "user_logs"), "public_user_logs");
+        assert_eq!(FelderaOutput::qualify_table_name("data-warehouse", "events"), "data-warehouse_events");
+        assert_eq!(FelderaOutput::qualify_table_name("schema123", "table456"), "schema123_table456");
+    }
+
+    /// Tests build_ingress_url() basic functionality
+    #[tokio::test]
+    async fn test_build_ingress_url() {
+        let output = FelderaOutput::new(
+            "http://localhost:8080",
+            "test_pipeline",
+            None,
+            None,
+        ).await.unwrap();
+
+        let url = output.build_ingress_url("public_users");
+        assert_eq!(
+            url,
+            "http://localhost:8080/v0/pipelines/test_pipeline/ingress/public_users?format=json&update_format=insert_delete&array=true"
+        );
+    }
+
+    /// Tests build_ingress_url() with URL encoding
+    #[tokio::test]
+    async fn test_build_ingress_url_encoding() {
+        let output = FelderaOutput::new(
+            "http://localhost:8080",
+            "my pipeline",
+            None,
+            None,
+        ).await.unwrap();
+
+        let url = output.build_ingress_url("public users");
+        assert!(url.contains("my%20pipeline"));
+        assert!(url.contains("public%20users"));
+    }
+
+    /// Tests table filtering - allowed table passes through
+    #[tokio::test]
+    async fn test_table_filtering_allowed() {
+        let output = FelderaOutput::new(
+            "http://localhost:8080",
+            "test_pipeline",
+            Some(vec!["public_users".to_string(), "public_orders".to_string()]),
+            None,
+        ).await.unwrap();
+
+        let mut tuple = HashMap::new();
+        tuple.insert("id".to_string(), Some("1".to_string()));
+
+        let change = Change::Insert {
+            relation_id: 16384,
+            schema: "public".to_string(),
+            table: "users".to_string(),
+            new_tuple: tuple,
+        };
+
+        // Should succeed without error
+        let result = output.write_change(&change).await;
+        // Note: This will fail because we can't actually send HTTP in unit tests
+        // but we're testing that it gets past the filtering logic
+        assert!(result.is_err()); // Will fail at HTTP send, not at filtering
+    }
+
+    /// Tests table filtering - disallowed table is skipped
+    #[tokio::test]
+    async fn test_table_filtering_disallowed() {
+        let output = FelderaOutput::new(
+            "http://localhost:8080",
+            "test_pipeline",
+            Some(vec!["public_users".to_string()]),
+            None,
+        ).await.unwrap();
+
+        let mut tuple = HashMap::new();
+        tuple.insert("id".to_string(), Some("1".to_string()));
+
+        let change = Change::Insert {
+            relation_id: 16384,
+            schema: "public".to_string(),
+            table: "orders".to_string(), // Not in allowed list
+            new_tuple: tuple,
+        };
+
+        // Should succeed by skipping the table
+        let result = output.write_change(&change).await;
+        assert!(result.is_ok());
+    }
+
+    /// Tests table filtering - no filter allows all tables
+    #[tokio::test]
+    async fn test_table_filtering_no_filter() {
+        let output = FelderaOutput::new(
+            "http://localhost:8080",
+            "test_pipeline",
+            None, // No filter
+            None,
+        ).await.unwrap();
+
+        let mut tuple = HashMap::new();
+        tuple.insert("id".to_string(), Some("1".to_string()));
+
+        let change = Change::Insert {
+            relation_id: 16384,
+            schema: "analytics".to_string(),
+            table: "events".to_string(),
+            new_tuple: tuple,
+        };
+
+        // Should attempt to process (will fail at HTTP send)
+        let result = output.write_change(&change).await;
+        assert!(result.is_err()); // Will fail at HTTP send, not at filtering
+    }
 }

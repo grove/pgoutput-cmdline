@@ -59,9 +59,10 @@ struct Args {
     #[arg(long)]
     feldera_pipeline: Option<String>,
 
-    /// Feldera table name (required when target includes 'feldera')
+    /// Feldera table names in schema_table format (e.g., 'public_users,analytics_orders').
+    /// Optional; if omitted, routes all tables dynamically.
     #[arg(long)]
-    feldera_table: Option<String>,
+    feldera_tables: Option<String>,
 
     /// Feldera API key for authentication (optional)
     #[arg(long)]
@@ -123,13 +124,24 @@ async fn main() -> Result<()> {
                     .ok_or_else(|| anyhow::anyhow!("--feldera-url is required when target includes 'feldera'"))?;
                 let feldera_pipeline = args.feldera_pipeline.as_ref()
                     .ok_or_else(|| anyhow::anyhow!("--feldera-pipeline is required when target includes 'feldera'"))?;
-                let feldera_table = args.feldera_table.as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("--feldera-table is required when target includes 'feldera'"))?;
+                
+                // Parse comma-separated table list if provided
+                let allowed_tables = args.feldera_tables.as_ref().map(|tables_str| {
+                    tables_str
+                        .split(',')
+                        .map(|t| t.trim().to_string())
+                        .filter(|t| !t.is_empty())
+                        .collect::<Vec<String>>()
+                });
                 
                 eprintln!("  - Feldera HTTP Connector:");
                 eprintln!("      URL: {}", feldera_url);
                 eprintln!("      Pipeline: {}", feldera_pipeline);
-                eprintln!("      Table: {}", feldera_table);
+                if let Some(ref tables) = allowed_tables {
+                    eprintln!("      Tables: {}", tables.join(", "));
+                } else {
+                    eprintln!("      Tables: all (dynamic routing)");
+                }
                 if args.feldera_api_key.is_some() {
                     eprintln!("      API Key: [configured]");
                 }
@@ -137,7 +149,7 @@ async fn main() -> Result<()> {
                 let feldera_output = output::FelderaOutput::new(
                     feldera_url,
                     feldera_pipeline,
-                    feldera_table,
+                    allowed_tables,
                     args.feldera_api_key.as_deref(),
                 ).await?;
                 targets.push(Arc::new(feldera_output));

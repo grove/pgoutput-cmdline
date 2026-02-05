@@ -5,6 +5,7 @@ This guide covers how to stream PostgreSQL logical replication changes directly 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Table Name Mapping](#table-name-mapping)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [How It Works](#how-it-works)
@@ -25,7 +26,29 @@ The Feldera HTTP connector enables direct streaming from PostgreSQL to Feldera p
 - Synchronize data between PostgreSQL and other systems
 - Build event-driven architectures
 
-**Key Feature**: Automatically converts PostgreSQL data types to proper JSON types (integers → numbers, booleans → true/false, etc.), ensuring compatibility with Feldera's type system.
+**Key Features**:
+- **Multi-table streaming**: Automatically routes changes from multiple PostgreSQL tables to corresponding Feldera tables
+- **Schema-qualified naming**: Uses `schema_table` format to avoid naming conflicts across schemas
+- **Type conversion**: Converts PostgreSQL data types to proper JSON types (integers → numbers, booleans → true/false, etc.)
+- **Optional filtering**: Configure specific tables to stream, or stream all tables dynamically
+
+## Table Name Mapping
+
+PostgreSQL tables are mapped to Feldera using a **schema-qualified naming convention** to avoid conflicts:
+
+| PostgreSQL Table | Feldera Table Name |
+|------------------|--------------------|
+| `public.users` | `public_users` |
+| `public.orders` | `public_orders` |
+| `analytics.users` | `analytics_users` |
+| `sales.products` | `sales_products` |
+
+**Why schema qualification?**
+- Prevents naming conflicts when different schemas have tables with the same name
+- Makes data lineage explicit in your Feldera pipeline
+- Follows a predictable, deterministic naming pattern
+
+**Example**: If your PostgreSQL has both `public.events` and `analytics.events`, they route to separate Feldera tables: `public_events` and `analytics_events`.
 
 ## Quick Start
 
@@ -35,13 +58,13 @@ The Feldera HTTP connector enables direct streaming from PostgreSQL to Feldera p
 - Feldera instance running (local or cloud)
 - A Feldera pipeline with a table matching your PostgreSQL schema
 
-### 2. Basic Example
+### 2. Basic Example (All Tables)
 
 ```bash
 # Build the tool
 cargo build --release
 
-# Stream PostgreSQL changes to Feldera
+# Stream all PostgreSQL tables to Feldera (dynamic routing)
 ./target/release/pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb replication=database" \
   --slot feldera_slot \
@@ -50,7 +73,24 @@ cargo build --release
   --target feldera \
   --feldera-url "http://localhost:8080" \
   --feldera-pipeline "postgres_cdc" \
-  --feldera-table "users" \
+  --create-slot
+```
+
+**Note**: Without `--feldera-tables`, all tables in the publication are automatically routed to Feldera using the schema_table naming convention.
+
+### 3. Filtered Tables Example
+
+```bash
+# Stream only specific tables
+./target/release/pgoutput-stream \
+  --connection "host=localhost user=postgres dbname=mydb replication=database" \
+  --slot feldera_slot \
+  --publication my_pub \
+  --format feldera \
+  --target feldera \
+  --feldera-url "http://localhost:8080" \
+  --feldera-pipeline "postgres_cdc" \
+  --feldera-tables "public_users,public_orders" \
   --create-slot
 ```
 
@@ -62,8 +102,9 @@ Check the Feldera web UI or use the API to verify data is flowing:
 # Query the pipeline status
 curl http://localhost:8080/v0/pipelines/postgres_cdc
 
-# Query the table data
-curl http://localhost:8080/v0/pipelines/postgres_cdc/egress/users
+# Query table data (note: schema-qualified name)
+curl http://localhost:8080/v0/pipelines/postgres_cdc/egress/public_users
+curl http://localhost:8080/v0/pipelines/postgres_cdc/egress/public_orders
 ```
 
 ## Configuration
@@ -76,20 +117,12 @@ When `--target` includes `feldera`, these arguments are required:
 |----------|-------------|---------|
 | `--feldera-url` | Base URL of Feldera instance | `http://localhost:8080` |
 | `--feldera-pipeline` | Name of the pipeline | `postgres_cdc` |
-| `--feldera-table` | Name of the table in pipeline | `users` |
 
 ### Optional Arguments
 
 | Argument | Description | Default |
-|----------|-------------|---------|
-| `--feldera-api-key` | API key for authentication | None (no auth) |
-| `--format` | Must be `feldera` for HTTP connector | `json` |
-
-### Connection URL Format
-
-The connector automatically constructs the Feldera ingress URL:
-
-```
+|----------|-------------|---------|  
+| `--feldera-tables` | Comma-separated list of schema-qualified tables (e.g., `public_users,public_orders`). If omitted, all tables are routed dynamically. | All tables |
 {feldera-url}/v0/pipelines/{pipeline}/ingress/{table}?format=json&update_format=insert_delete&array=true
 ```
 
@@ -165,9 +198,9 @@ Only data changes (INSERT, UPDATE, DELETE) are streamed.
 
 ## Examples
 
-### Example 1: Local Development
+### Example 1: Multi-Table Streaming (All Tables)
 
-Stream from local PostgreSQL to local Feldera:
+Stream all tables from PostgreSQL publication to Feldera:
 
 ```bash
 pgoutput-stream \
@@ -178,26 +211,29 @@ pgoutput-stream \
   --target feldera \
   --feldera-url "http://localhost:8080" \
   --feldera-pipeline "dev_pipeline" \
-  --feldera-table "users" \
   --create-slot
 ```
 
-### Example 2: Cloud Deployment
+**Note**: All tables in the publication are automatically streamed. PostgreSQL `public.users` routes to Feldera `public_users`, `public.orders` routes to `public_orders`, etc.
 
-Stream to Feldera Cloud with authentication:
+### Example 2: Filtered Table Streaming
+
+Stream only specific tables using the `--feldera-tables` filter:
 
 ```bash
 pgoutput-stream \
-  --connection "host=db.example.com user=replicator dbname=prod sslmode=require replication=database" \
-  --slot prod_feldera_slot \
-  --publication prod_pub \
+  --connection "host=localhost user=postgres dbname=mydb replication=database" \
+  --slot filtered_slot \
+  --publication all_tables \
   --format feldera \
   --target feldera \
-  --feldera-url "https://cloud.feldera.com" \
-  --feldera-pipeline "production_pipeline" \
-  --feldera-table "events" \
-  --feldera-api-key "${FELDERA_API_KEY}"
+  --feldera-url "http://localhost:8080" \
+  --feldera-pipeline "dev_pipeline" \
+  --feldera-tables "public_users,public_orders" \
+  --create-slot
 ```
+
+**Note**: Only `public.users` and `public.orders` will be streamed. Other tables in the publication are skipped with a warning.
 
 ### Example 3: Complete Pipeline Setup
 
@@ -219,14 +255,15 @@ ALTER TABLE orders REPLICA IDENTITY FULL;
 
 ```sql
 -- In Feldera SQL editor
-CREATE TABLE users (
+-- Note: Use schema_table naming convention
+CREATE TABLE public_users (
     id INT,
     name VARCHAR,
     email VARCHAR,
     created_at TIMESTAMP
 );
 
-CREATE TABLE orders (
+CREATE TABLE public_orders (
     id INT,
     user_id INT,
     product VARCHAR,
@@ -241,38 +278,27 @@ SELECT
     u.email,
     COUNT(o.id) as order_count,
     SUM(o.amount) as total_spent
-FROM users u
-LEFT JOIN orders o ON u.id = o.user_id
+FROM public_users u
+LEFT JOIN public_orders o ON u.id = o.user_id
 GROUP BY u.id, u.name, u.email;
 ```
 
-**Step 3: Stream Data**
+**Step 3: Stream Data (Single Process)**
 
 ```bash
-# Terminal 1: Stream users table
+# Stream all tables from the publication
 pgoutput-stream \
-  --connection "..." \
-  --slot users_slot \
+  --connection "host=localhost user=postgres dbname=mydb replication=database" \
+  --slot feldera_slot \
   --publication feldera_pub \
   --format feldera \
   --target feldera \
   --feldera-url "http://localhost:8080" \
   --feldera-pipeline "my_pipeline" \
-  --feldera-table "users" \
-  --create-slot
-
-# Terminal 2: Stream orders table
-pgoutput-stream \
-  --connection "..." \
-  --slot orders_slot \
-  --publication feldera_pub \
-  --format feldera \
-  --target feldera \
-  --feldera-url "http://localhost:8080" \
-  --feldera-pipeline "my_pipeline" \
-  --feldera-table "orders" \
   --create-slot
 ```
+
+**Advantage**: Single process streams both `users` and `orders` tables automatically. No need for multiple terminals or processes.
 
 **Step 4: Query Results**
 
@@ -295,8 +321,7 @@ pgoutput-stream \
   --format feldera \
   --target "stdout,feldera" \
   --feldera-url "http://localhost:8080" \
-  --feldera-pipeline "my_pipeline" \
-  --feldera-table "users"
+  --feldera-pipeline "my_pipeline"
 ```
 
 ### Feldera + NATS + Stdout
@@ -310,8 +335,7 @@ pgoutput-stream \
   --target "stdout,nats,feldera" \
   --nats-server "nats://localhost:4222" \
   --feldera-url "http://localhost:8080" \
-  --feldera-pipeline "my_pipeline" \
-  --feldera-table "users"
+  --feldera-pipeline "my_pipeline"
 ```
 
 This allows you to:
