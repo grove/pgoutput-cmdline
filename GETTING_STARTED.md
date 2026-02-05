@@ -1,4 +1,4 @@
-# Getting Started with pgoutput-cmdline
+# Getting Started with pgoutput-stream
 
 ## Quick Start
 
@@ -35,7 +35,7 @@ This creates:
 cargo build --release
 
 # Start streaming changes
-./target/release/pgoutput-cmdline \
+./target/release/pgoutput-stream \
   --connection "host=localhost user=postgres dbname=replication_test" \
   --slot test_slot \
   --publication test_publication \
@@ -124,7 +124,7 @@ FROM pg_replication_slots;
 ```
 PostgreSQL → Logical Replication Protocol → pgoutput plugin
                                                ↓
-                                    pgoutput-cmdline decoder
+                                    pgoutput-stream decoder
                                                ↓
                                     JSON/Text Formatter
                                                ↓

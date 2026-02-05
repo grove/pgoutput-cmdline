@@ -1,6 +1,6 @@
 -- Test Feldera InsertDelete format output
 -- Run this with: psql -U postgres -d mydb -f test_feldera.sql
--- While running: pgoutput-cmdline --connection "..." --slot my_slot --publication my_pub --format feldera
+-- While running: pgoutput-stream --connection "..." --slot my_slot --publication my_pub --format feldera
 
 BEGIN;
 

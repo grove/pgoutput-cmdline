@@ -1,4 +1,4 @@
-use pgoutput_cmdline::decoder::*;
+use pgoutput_stream::decoder::*;
 
 /// Tests decoding of BEGIN transaction messages from the pgoutput protocol.
 /// Verifies that LSN (Log Sequence Number), timestamp, and transaction ID (xid) are correctly parsed.

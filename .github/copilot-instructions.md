@@ -1,4 +1,4 @@
-# pgoutput-cmdline Agent Guidelines
+# pgoutput-stream Agent Guidelines
 
 A PostgreSQL logical replication streaming tool that decodes pgoutput protocol messages and distributes changes to multiple destinations (stdout, NATS JetStream, Feldera HTTP).
 
@@ -32,7 +32,7 @@ cargo test
 
 # Production
 cargo build --release
-./target/release/pgoutput-cmdline
+./target/release/pgoutput-stream
 
 # Pre-commit checks
 cargo fmt && cargo clippy && cargo test

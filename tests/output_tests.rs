@@ -1,5 +1,5 @@
-use pgoutput_cmdline::output::*;
-use pgoutput_cmdline::decoder::*;
+use pgoutput_stream::output::*;
+use pgoutput_stream::decoder::*;
 use std::collections::HashMap;
 
 /// Tests parsing of 'json' output format string.
@@ -692,7 +692,7 @@ fn test_debezium_insert() {
         new_tuple: tuple,
     };
     
-    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change).unwrap();
+    let envelope = pgoutput_stream::output::convert_to_debezium_test(&change).unwrap();
     
     assert_eq!(envelope.op, "c");
     assert!(envelope.before.is_none());
@@ -722,7 +722,7 @@ fn test_debezium_update() {
         new_tuple,
     };
     
-    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change).unwrap();
+    let envelope = pgoutput_stream::output::convert_to_debezium_test(&change).unwrap();
     
     assert_eq!(envelope.op, "u");
     assert!(envelope.before.is_some());
@@ -746,7 +746,7 @@ fn test_debezium_delete() {
         old_tuple,
     };
     
-    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change).unwrap();
+    let envelope = pgoutput_stream::output::convert_to_debezium_test(&change).unwrap();
     
     assert_eq!(envelope.op, "d");
     assert!(envelope.before.is_some());
@@ -765,7 +765,7 @@ fn test_debezium_begin_skipped() {
         xid: 1234,
     };
     
-    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change);
+    let envelope = pgoutput_stream::output::convert_to_debezium_test(&change);
     assert!(envelope.is_none());
 }
 
@@ -778,7 +778,7 @@ fn test_debezium_commit_skipped() {
         timestamp: 1705320001000,
     };
     
-    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change);
+    let envelope = pgoutput_stream::output::convert_to_debezium_test(&change);
     assert!(envelope.is_none());
 }
 
@@ -793,7 +793,7 @@ fn test_debezium_relation_skipped() {
         columns: vec![],
     };
     
-    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change);
+    let envelope = pgoutput_stream::output::convert_to_debezium_test(&change);
     assert!(envelope.is_none());
 }
 
@@ -812,7 +812,7 @@ fn test_debezium_null_handling() {
         new_tuple: tuple,
     };
     
-    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change).unwrap();
+    let envelope = pgoutput_stream::output::convert_to_debezium_test(&change).unwrap();
     
     assert!(envelope.after.is_some());
     let after = envelope.after.as_ref().unwrap();
@@ -833,7 +833,7 @@ fn test_debezium_source_metadata() {
         new_tuple: tuple,
     };
     
-    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change).unwrap();
+    let envelope = pgoutput_stream::output::convert_to_debezium_test(&change).unwrap();
     
     assert_eq!(envelope.source.version, "pgoutput-cmdline-0.1.0");
     assert_eq!(envelope.source.connector, "postgresql");
@@ -858,7 +858,7 @@ fn test_debezium_timestamp() {
         new_tuple: tuple,
     };
     
-    let envelope = pgoutput_cmdline::output::convert_to_debezium_test(&change).unwrap();
+    let envelope = pgoutput_stream::output::convert_to_debezium_test(&change).unwrap();
     
     // Verify ts_ms is positive and reasonable (after 2020-01-01)
     assert!(envelope.ts_ms > 1577836800000); // 2020-01-01 in milliseconds
@@ -895,7 +895,7 @@ fn test_feldera_insert() {
         new_tuple: tuple,
     };
     
-    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    let events = pgoutput_stream::output::convert_to_feldera_test(&change);
     
     assert_eq!(events.len(), 1);
     let event = &events[0];
@@ -928,7 +928,7 @@ fn test_feldera_update() {
         new_tuple,
     };
     
-    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    let events = pgoutput_stream::output::convert_to_feldera_test(&change);
     
     // Update should produce two events: delete + insert
     assert_eq!(events.len(), 2);
@@ -968,7 +968,7 @@ fn test_feldera_update_without_old_tuple() {
         new_tuple,
     };
     
-    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    let events = pgoutput_stream::output::convert_to_feldera_test(&change);
     
     // Without old_tuple, only insert is produced
     assert_eq!(events.len(), 1);
@@ -992,7 +992,7 @@ fn test_feldera_delete() {
         old_tuple,
     };
     
-    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    let events = pgoutput_stream::output::convert_to_feldera_test(&change);
     
     assert_eq!(events.len(), 1);
     let event = &events[0];
@@ -1015,7 +1015,7 @@ fn test_feldera_begin_skipped() {
         xid: 1234,
     };
     
-    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    let events = pgoutput_stream::output::convert_to_feldera_test(&change);
     assert!(events.is_empty());
 }
 
@@ -1028,7 +1028,7 @@ fn test_feldera_commit_skipped() {
         timestamp: 1705320001000,
     };
     
-    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    let events = pgoutput_stream::output::convert_to_feldera_test(&change);
     assert!(events.is_empty());
 }
 
@@ -1043,7 +1043,7 @@ fn test_feldera_relation_skipped() {
         columns: vec![],
     };
     
-    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    let events = pgoutput_stream::output::convert_to_feldera_test(&change);
     assert!(events.is_empty());
 }
 
@@ -1062,7 +1062,7 @@ fn test_feldera_null_handling() {
         new_tuple: tuple,
     };
     
-    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    let events = pgoutput_stream::output::convert_to_feldera_test(&change);
     
     assert_eq!(events.len(), 1);
     let event = &events[0];
@@ -1086,7 +1086,7 @@ fn test_feldera_serialization() {
         new_tuple: tuple,
     };
     
-    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    let events = pgoutput_stream::output::convert_to_feldera_test(&change);
     assert_eq!(events.len(), 1);
     
     // Serialize to JSON
@@ -1094,7 +1094,7 @@ fn test_feldera_serialization() {
     assert!(json.contains("\"insert\""));
     
     // Deserialize back
-    let deserialized: pgoutput_cmdline::output::FelderaUpdate = serde_json::from_str(&json).unwrap();
+    let deserialized: pgoutput_stream::output::FelderaUpdate = serde_json::from_str(&json).unwrap();
     assert!(deserialized.insert.is_some());
 }
 
@@ -1111,7 +1111,7 @@ fn test_feldera_empty_tuple() {
         new_tuple: tuple,
     };
     
-    let events = pgoutput_cmdline::output::convert_to_feldera_test(&change);
+    let events = pgoutput_stream::output::convert_to_feldera_test(&change);
     assert_eq!(events.len(), 1);
     assert!(events[0].insert.is_some());
 }

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use output::OutputTarget;
 
 #[derive(Parser, Debug)]
-#[command(name = "pgoutput-cmdline")]
+#[command(name = "pgoutput-stream")]
 #[command(about = "Stream PostgreSQL logical replication changes to stdout", long_about = None)]
 struct Args {
     /// PostgreSQL connection string (e.g., "host=localhost user=postgres dbname=mydb")

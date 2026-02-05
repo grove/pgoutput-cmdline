@@ -1,5 +1,5 @@
 [package]
-name = "pgoutput-cmdline"
+name = "pgoutput-stream"
 version = "0.1.0"
 edition = "2021"
 

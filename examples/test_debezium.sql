@@ -1,6 +1,6 @@
 -- Test Debezium format output
 -- Run this with: psql -U postgres -d mydb -f test_debezium.sql
--- While running: pgoutput-cmdline --connection "..." --slot my_slot --publication my_pub --format debezium
+-- While running: pgoutput-stream --connection "..." --slot my_slot --publication my_pub --format debezium
 
 BEGIN;
 

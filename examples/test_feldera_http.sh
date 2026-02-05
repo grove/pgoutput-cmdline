@@ -13,7 +13,7 @@ FELDERA_PIPELINE="postgres_cdc"
 FELDERA_TABLE="users"
 
 # Build the project
-echo "Building pgoutput-cmdline..."
+echo "Building pgoutput-stream..."
 cargo build --release
 
 # Run with Feldera target
@@ -21,7 +21,7 @@ echo "Starting replication to Feldera..."
 echo "Target: $FELDERA_URL/v0/pipelines/$FELDERA_PIPELINE/ingress/$FELDERA_TABLE"
 echo ""
 
-./target/release/pgoutput-cmdline \
+./target/release/pgoutput-stream \
     --connection "host=$POSTGRES_HOST user=$POSTGRES_USER dbname=$POSTGRES_DB replication=database" \
     --slot "$SLOT_NAME" \
     --publication "$PUBLICATION" \

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Successfully implemented the Feldera HTTP connector with unified `--target` CLI option for pgoutput-cmdline. This enables direct streaming from PostgreSQL to Feldera pipelines via HTTP ingress API.
+Successfully implemented the Feldera HTTP connector with unified `--target` CLI option for pgoutput-stream. This enables direct streaming from PostgreSQL to Feldera pipelines via HTTP ingress API.
 
 ## Changes Made
 
@@ -108,7 +108,7 @@ let target_list: Vec<&str> = args.target.split(',').map(|s| s.trim()).collect();
 
 ### Basic Feldera Streaming
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb replication=database" \
   --slot feldera_slot \
   --publication my_pub \
@@ -122,7 +122,7 @@ pgoutput-cmdline \
 
 ### Multiple Targets (Stdout + Feldera)
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -135,7 +135,7 @@ pgoutput-cmdline \
 
 ### All Three Targets (Stdout + NATS + Feldera)
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -149,7 +149,7 @@ pgoutput-cmdline \
 
 ### With Authentication
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \

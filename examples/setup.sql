@@ -1,4 +1,4 @@
--- Example PostgreSQL setup for testing pgoutput-cmdline
+-- Example PostgreSQL setup for testing pgoutput-stream
 -- Run this with: psql -U postgres -f examples/setup.sql
 
 -- Create test database

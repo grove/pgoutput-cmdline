@@ -296,7 +296,7 @@ Example UPDATE event:
 docker run -p 4222:4222 -p 8222:8222 nats:latest -js
 ```
 
-### Terminal 2: Start pgoutput-cmdline
+### Terminal 2: Start pgoutput-stream
 
 ```bash
 ./examples/run_with_nats.sh
@@ -325,12 +325,12 @@ You should see the event in Terminal 3!
 
 ### Stream Not Found
 
-- The stream is created automatically by pgoutput-cmdline when it starts
+- The stream is created automatically by pgoutput-stream when it starts
 - Or create manually: `nats stream add postgres_replication --subjects "postgres.*.*.*"`
 
 ### No Messages Appearing
 
-- Verify pgoutput-cmdline is running with `--nats-server` flag
+- Verify pgoutput-stream is running with `--nats-server` flag
 - Check stream has messages: `nats stream info postgres_replication`
 - Verify subject pattern matches: `nats stream subjects postgres_replication`
 

@@ -1,4 +1,4 @@
-# pgoutput-cmdline
+# pgoutput-stream
 
 A high-performance Rust command-line tool that streams PostgreSQL logical replication changes to multiple destinations including stdout, NATS JetStream, and Feldera pipelines.
 
@@ -67,14 +67,14 @@ New to this tool? Check out [GETTING_STARTED.md](GETTING_STARTED.md) for a quick
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/pgoutput-cmdline.git
-cd pgoutput-cmdline
+git clone https://github.com/yourusername/pgoutput-stream.git
+cd pgoutput-stream
 
 # Build the project
 cargo build --release
 
 # The binary will be available at:
-# ./target/release/pgoutput-cmdline
+# ./target/release/pgoutput-stream
 ```
 
 ## Usage
@@ -82,7 +82,7 @@ cargo build --release
 ### Basic Usage
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres password=secret dbname=mydb" \
   --slot my_replication_slot \
   --publication my_publication
@@ -91,7 +91,7 @@ pgoutput-cmdline \
 ### Create Replication Slot Automatically
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres password=secret dbname=mydb" \
   --slot my_replication_slot \
   --publication my_publication \
@@ -102,7 +102,7 @@ pgoutput-cmdline \
 
 #### JSON (default)
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -118,7 +118,7 @@ Output:
 
 #### Pretty JSON
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -127,7 +127,7 @@ pgoutput-cmdline \
 
 #### Human-Readable Text
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -146,7 +146,7 @@ COMMIT [LSN: 0/123457, Time: 123456790]
 
 #### Debezium CDC Format
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -171,9 +171,9 @@ The Debezium format outputs Change Data Capture (CDC) events compatible with Deb
     "email": "alice@example.com"
   },
   "source": {
-    "version": "pgoutput-cmdline-0.1.0",
+    "version": "pgoutput-stream-0.1.0",
     "connector": "postgresql",
-    "name": "pgoutput-cmdline",
+    "name": "pgoutput-stream",
     "ts_ms": 1706107200000,
     "db": "postgres",
     "schema": "public",
@@ -199,9 +199,9 @@ The Debezium format outputs Change Data Capture (CDC) events compatible with Deb
     "email": "alice.updated@example.com"
   },
   "source": {
-    "version": "pgoutput-cmdline-0.1.0",
+    "version": "pgoutput-stream-0.1.0",
     "connector": "postgresql",
-    "name": "pgoutput-cmdline",
+    "name": "pgoutput-stream",
     "ts_ms": 1706107210000,
     "db": "postgres",
     "schema": "public",
@@ -223,9 +223,9 @@ The Debezium format outputs Change Data Capture (CDC) events compatible with Deb
   },
   "after": null,
   "source": {
-    "version": "pgoutput-cmdline-0.1.0",
+    "version": "pgoutput-stream-0.1.0",
     "connector": "postgresql",
-    "name": "pgoutput-cmdline",
+    "name": "pgoutput-stream",
     "ts_ms": 1706107220000,
     "db": "postgres",
     "schema": "public",
@@ -246,7 +246,7 @@ The Debezium format outputs Change Data Capture (CDC) events compatible with Deb
 
 #### Feldera JSON Format
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -323,7 +323,7 @@ Stream PostgreSQL changes to one or more destinations using the `--target` optio
 Output changes to standard output:
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -336,7 +336,7 @@ Combine multiple targets with comma-separated values:
 
 ```bash
 # Output to both stdout and NATS
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -344,7 +344,7 @@ pgoutput-cmdline \
   --nats-server "nats://localhost:4222"
 
 # Output to stdout, NATS, and Feldera simultaneously
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -363,7 +363,7 @@ Stream PostgreSQL changes directly to Feldera pipelines via HTTP ingress API. Pe
 ### Basic Usage
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb" \
   --slot my_slot \
   --publication my_pub \
@@ -377,7 +377,7 @@ pgoutput-cmdline \
 ### With API Authentication
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -430,7 +430,7 @@ WHERE email IS NOT NULL;
 Then stream from PostgreSQL:
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -489,7 +489,7 @@ docker run -p 4222:4222 -p 8222:8222 nats:latest -js
 
 ```bash
 # Stream to NATS only
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb" \
   --slot my_slot \
   --publication my_pub \
@@ -499,7 +499,7 @@ pgoutput-cmdline \
   --nats-subject-prefix "postgres"
 
 # Or combine with stdout
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb" \
   --slot my_slot \
   --publication my_pub \
@@ -650,13 +650,13 @@ The JSON output format makes it easy to pipe changes to other tools:
 
 ```bash
 # Stream to a file
-pgoutput-cmdline ... --format json > changes.jsonl
+pgoutput-stream ... --format json > changes.jsonl
 
 # Filter specific operations with jq
-pgoutput-cmdline ... --format json | jq 'select(.Insert != null)'
+pgoutput-stream ... --format json | jq 'select(.Insert != null)'
 
 # Process with custom scripts
-pgoutput-cmdline ... --format json | python process_changes.py
+pgoutput-stream ... --format json | python process_changes.py
 ```
 
 ## Documentation

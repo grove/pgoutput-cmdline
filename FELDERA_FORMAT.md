@@ -75,7 +75,7 @@ This ensures the counts remain accurate in real-time.
 ### Basic Usage
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb" \
   --slot feldera_slot \
   --publication my_publication \
@@ -85,7 +85,7 @@ pgoutput-cmdline \
 ### With NATS JetStream
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb" \
   --slot feldera_slot \
   --publication my_publication \
@@ -102,7 +102,7 @@ Use PostgreSQL publications to control which tables are captured:
 CREATE PUBLICATION feldera_pub FOR TABLE orders, customers, products;
 
 -- Run tool with this publication
-pgoutput-cmdline --publication feldera_pub --format feldera ...
+pgoutput-stream --publication feldera_pub --format feldera ...
 ```
 
 ## Sample Output
@@ -205,7 +205,7 @@ GROUP BY status;
 
 Pipe the output:
 ```bash
-pgoutput-cmdline --format feldera ... | feldera-ingest --table orders
+pgoutput-stream --format feldera ... | feldera-ingest --table orders
 ```
 
 ### With Stream Processing
@@ -214,13 +214,13 @@ Process the event stream with any tool that handles JSON:
 
 ```bash
 # Filter only inserts
-pgoutput-cmdline --format feldera | jq 'select(.insert != null)'
+pgoutput-stream --format feldera | jq 'select(.insert != null)'
 
 # Extract specific fields
-pgoutput-cmdline --format feldera | jq '.insert.customer // .delete.customer'
+pgoutput-stream --format feldera | jq '.insert.customer // .delete.customer'
 
 # Count events by type
-pgoutput-cmdline --format feldera | jq -r 'keys[0]' | sort | uniq -c
+pgoutput-stream --format feldera | jq -r 'keys[0]' | sort | uniq -c
 ```
 
 ### With Custom Consumers
@@ -284,7 +284,7 @@ Run the test:
 
 ```bash
 # Terminal 1: Start the tool
-pgoutput-cmdline --connection "..." --slot test_slot --publication my_pub --format feldera
+pgoutput-stream --connection "..." --slot test_slot --publication my_pub --format feldera
 
 # Terminal 2: Execute test operations
 psql -U postgres -d mydb -f examples/test_feldera.sql
@@ -328,8 +328,8 @@ ALTER TABLE your_table REPLICA IDENTITY FULL;
 
 Verify you're using the Feldera format:
 ```bash
-pgoutput-cmdline ... --format feldera  # Correct
-pgoutput-cmdline ... --format json     # Wrong - shows Update variant
+pgoutput-stream ... --format feldera  # Correct
+pgoutput-stream ... --format json     # Wrong - shows Update variant
 ```
 
 ### JSON Parsing Errors

@@ -1,4 +1,4 @@
-use pgoutput_cmdline::decoder::*;
+use pgoutput_stream::decoder::*;
 use std::collections::HashMap;
 
 // Helper function to create test changes

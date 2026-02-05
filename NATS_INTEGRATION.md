@@ -2,7 +2,7 @@
 
 ## Overview
 
-Added NATS JetStream integration to pgoutput-cmdline, enabling PostgreSQL replication events to be published to a distributed message streaming platform. The implementation supports dual output (stdout + NATS) with a clean, extensible architecture.
+Added NATS JetStream integration to pgoutput-stream, enabling PostgreSQL replication events to be published to a distributed message streaming platform. The implementation supports dual output (stdout + NATS) with a clean, extensible architecture.
 
 ## Changes Made
 
@@ -97,7 +97,7 @@ Example:
 
 ### Basic Usage (stdout only)
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb" \
   --slot my_slot \
   --publication my_pub
@@ -105,7 +105,7 @@ pgoutput-cmdline \
 
 ### With NATS (stdout + NATS)
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb" \
   --slot my_slot \
   --publication my_pub \
@@ -114,7 +114,7 @@ pgoutput-cmdline \
 
 ### Custom Stream Configuration
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb" \
   --slot my_slot \
   --publication my_pub \
@@ -212,7 +212,7 @@ docker run -p 4222:4222 nats:latest -js
 # Terminal 2: Start PostgreSQL (if not running)
 # Ensure setup.sql has been run
 
-# Terminal 3: Start pgoutput-cmdline
+# Terminal 3: Start pgoutput-stream
 ./examples/run_with_nats.sh
 
 # Terminal 4: Subscribe to events

@@ -42,7 +42,7 @@ The Feldera HTTP connector enables direct streaming from PostgreSQL to Feldera p
 cargo build --release
 
 # Stream PostgreSQL changes to Feldera
-./target/release/pgoutput-cmdline \
+./target/release/pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb replication=database" \
   --slot feldera_slot \
   --publication my_pub \
@@ -170,7 +170,7 @@ Only data changes (INSERT, UPDATE, DELETE) are streamed.
 Stream from local PostgreSQL to local Feldera:
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb replication=database" \
   --slot dev_slot \
   --publication all_tables \
@@ -187,7 +187,7 @@ pgoutput-cmdline \
 Stream to Feldera Cloud with authentication:
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=db.example.com user=replicator dbname=prod sslmode=require replication=database" \
   --slot prod_feldera_slot \
   --publication prod_pub \
@@ -250,7 +250,7 @@ GROUP BY u.id, u.name, u.email;
 
 ```bash
 # Terminal 1: Stream users table
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot users_slot \
   --publication feldera_pub \
@@ -262,7 +262,7 @@ pgoutput-cmdline \
   --create-slot
 
 # Terminal 2: Stream orders table
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot orders_slot \
   --publication feldera_pub \
@@ -288,7 +288,7 @@ Stream to Feldera and other targets simultaneously using comma-separated values:
 ### Feldera + Stdout
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -302,7 +302,7 @@ pgoutput-cmdline \
 ### Feldera + NATS + Stdout
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -326,7 +326,7 @@ This allows you to:
 Feldera supports Bearer token authentication:
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -345,7 +345,7 @@ For security, use environment variables:
 ```bash
 export FELDERA_API_KEY="your-api-key-here"
 
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -495,7 +495,7 @@ Error: Feldera ingress API returned error status 400: Invalid JSON format
 For detailed debugging, use stdout alongside Feldera:
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "..." \
   --slot my_slot \
   --publication my_pub \
@@ -570,7 +570,7 @@ Test pipeline locally before production:
 docker run -p 8080:8080 felderadb/feldera
 
 # Run tool against test database
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=test_db replication=database" \
   --slot test_slot \
   --publication test_pub \
@@ -608,6 +608,6 @@ pgoutput-cmdline \
 ## Support
 
 For issues or questions:
-- GitHub Issues: [Report a bug](https://github.com/yourusername/pgoutput-cmdline/issues)
+- GitHub Issues: [Report a bug](https://github.com/yourusername/pgoutput-stream/issues)
 - Feldera Community: [Feldera Discord/Forum]
 - PostgreSQL Replication: [PostgreSQL Documentation](https://www.postgresql.org/docs/current/logical-replication.html)

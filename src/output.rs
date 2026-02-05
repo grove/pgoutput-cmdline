@@ -166,9 +166,9 @@ fn convert_to_debezium(change: &Change) -> Option<DebeziumEnvelope> {
                 before,
                 after: Some(after),
                 source: DebeziumSource {
-                    version: "pgoutput-cmdline-0.1.0".to_string(),
+                    version: "pgoutput-stream-0.1.0".to_string(),
                     connector: "postgresql".to_string(),
-                    name: "pgoutput-cmdline".to_string(),
+                    name: "pgoutput-stream".to_string(),
                     ts_ms,
                     db: "postgres".to_string(),
                     schema: schema.clone(),

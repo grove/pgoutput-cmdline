@@ -1,5 +1,5 @@
 -- Test SQL statements to generate replication events
--- Run this while pgoutput-cmdline is running to see changes
+-- Run this while pgoutput-stream is running to see changes
 
 -- Connect to the test database
 \c replication_test

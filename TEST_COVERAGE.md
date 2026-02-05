@@ -1,7 +1,7 @@
 # Test Coverage Summary
 
 ## Overview
-The pgoutput-cmdline project has comprehensive unit tests covering decoder logic, output formatting, and NATS integration functionality.
+The pgoutput-stream project has comprehensive unit tests covering decoder logic, output formatting, and NATS integration functionality.
 
 ## Test Statistics
 - **Total Tests**: 58 tests
@@ -73,7 +73,7 @@ The pgoutput-cmdline project has comprehensive unit tests covering decoder logic
 ## Test Organization
 
 ```
-pgoutput-cmdline/
+pgoutput-stream/
 ├── src/
 │   ├── lib.rs          # Module exports for testing
 │   ├── decoder.rs      # Protocol decoding logic

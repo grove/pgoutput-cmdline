@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Example script to run pgoutput-cmdline with NATS JetStream integration
+# Example script to run pgoutput-stream with NATS JetStream integration
 # 
 # Prerequisites:
 # 1. PostgreSQL with logical replication enabled
@@ -19,7 +19,7 @@ NATS_SERVER="nats://localhost:4222"
 NATS_STREAM="postgres_replication"
 NATS_PREFIX="postgres"
 
-echo "Starting pgoutput-cmdline with NATS JetStream integration..."
+echo "Starting pgoutput-stream with NATS JetStream integration..."
 echo ""
 echo "PostgreSQL:"
 echo "  Host: $PG_HOST"

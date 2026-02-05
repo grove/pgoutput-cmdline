@@ -28,9 +28,9 @@ The Debezium format outputs Change Data Capture (CDC) events in a structure comp
 
 | Field | Type | Example | Description |
 |-------|------|---------|-------------|
-| `version` | string | `"pgoutput-cmdline-0.1.0"` | Tool version |
+| `version` | string | `"pgoutput-stream-0.1.0"` | Tool version |
 | `connector` | string | `"postgresql"` | Database type |
-| `name` | string | `"pgoutput-cmdline"` | Connector name |
+| `name` | string | `"pgoutput-stream"` | Connector name |
 | `ts_ms` | number | `1706107200000` | Capture timestamp |
 | `db` | string | `"postgres"` | Database name |
 | `schema` | string | `"public"` | Schema name |
@@ -52,7 +52,7 @@ The Debezium format outputs Change Data Capture (CDC) events in a structure comp
 ### Basic Usage
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb" \
   --slot debezium_slot \
   --publication my_publication \
@@ -62,7 +62,7 @@ pgoutput-cmdline \
 ### With NATS JetStream
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --connection "host=localhost user=postgres dbname=mydb" \
   --slot debezium_slot \
   --publication my_publication \
@@ -81,7 +81,7 @@ Use PostgreSQL publications to control which tables are captured:
 CREATE PUBLICATION debezium_pub FOR TABLE users, orders, products;
 
 -- Run tool with this publication
-pgoutput-cmdline --publication debezium_pub --format debezium ...
+pgoutput-stream --publication debezium_pub --format debezium ...
 ```
 
 ## Sample Output
@@ -98,9 +98,9 @@ pgoutput-cmdline --publication debezium_pub --format debezium ...
     "created_at": "2024-01-25T10:30:00Z"
   },
   "source": {
-    "version": "pgoutput-cmdline-0.1.0",
+    "version": "pgoutput-stream-0.1.0",
     "connector": "postgresql",
-    "name": "pgoutput-cmdline",
+    "name": "pgoutput-stream",
     "ts_ms": 1706180000000,
     "db": "postgres",
     "schema": "public",
@@ -129,9 +129,9 @@ pgoutput-cmdline --publication debezium_pub --format debezium ...
     "created_at": "2024-01-25T10:30:00Z"
   },
   "source": {
-    "version": "pgoutput-cmdline-0.1.0",
+    "version": "pgoutput-stream-0.1.0",
     "connector": "postgresql",
-    "name": "pgoutput-cmdline",
+    "name": "pgoutput-stream",
     "ts_ms": 1706180100000,
     "db": "postgres",
     "schema": "public",
@@ -155,9 +155,9 @@ pgoutput-cmdline --publication debezium_pub --format debezium ...
   },
   "after": null,
   "source": {
-    "version": "pgoutput-cmdline-0.1.0",
+    "version": "pgoutput-stream-0.1.0",
     "connector": "postgresql",
-    "name": "pgoutput-cmdline",
+    "name": "pgoutput-stream",
     "ts_ms": 1706180200000,
     "db": "postgres",
     "schema": "public",
@@ -224,7 +224,7 @@ Events are emitted in the order they are received from PostgreSQL's logical repl
 While this tool doesn't directly integrate with Kafka, you can pipe the output:
 
 ```bash
-pgoutput-cmdline --format debezium ... | kafka-console-producer --topic cdc-events ...
+pgoutput-stream --format debezium ... | kafka-console-producer --topic cdc-events ...
 ```
 
 ### With Data Pipelines
@@ -233,13 +233,13 @@ The JSON output can be consumed by any tool that processes JSON streams:
 
 ```bash
 # Stream to file
-pgoutput-cmdline --format debezium > cdc-events.jsonl
+pgoutput-stream --format debezium > cdc-events.jsonl
 
 # Process with jq
-pgoutput-cmdline --format debezium | jq 'select(.op == "c")'
+pgoutput-stream --format debezium | jq 'select(.op == "c")'
 
 # Stream to analytics
-pgoutput-cmdline --format debezium | your-analytics-consumer
+pgoutput-stream --format debezium | your-analytics-consumer
 ```
 
 ### With NATS for Distributed Processing
@@ -247,7 +247,7 @@ pgoutput-cmdline --format debezium | your-analytics-consumer
 Combine Debezium format with NATS to distribute CDC events:
 
 ```bash
-pgoutput-cmdline \
+pgoutput-stream \
   --format debezium \
   --nats-server "nats://localhost:4222"
   
@@ -276,7 +276,7 @@ Run the test:
 
 ```bash
 # Terminal 1: Start the tool
-pgoutput-cmdline --connection "..." --slot test_slot --publication my_pub --format debezium
+pgoutput-stream --connection "..." --slot test_slot --publication my_pub --format debezium
 
 # Terminal 2: Execute test operations
 psql -U postgres -d mydb -f examples/test_debezium.sql
